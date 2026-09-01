@@ -3,7 +3,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Instala dependências
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 RUN npm install
 
 # Copia o código-fonte
@@ -18,6 +18,9 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 ENV NODE_ENV=production
+
+# Muda para o usuário não-root por segurança
+USER node
 
 # Inicia a aplicação
 CMD ["npm", "start"]

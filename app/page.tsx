@@ -36,6 +36,15 @@ function ConnectPageContent() {
       {/* Main QR Code Center Card */}
       <main className="w-full max-w-md flex flex-col items-center justify-center my-auto py-2">
         <WhatsAppConnect initialInstance={queryInstance} />
+        
+        <div className="mt-8 w-full">
+          <a 
+            href="/disparador" 
+            className="w-full flex items-center justify-center gap-2 py-4 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white rounded-2xl font-bold shadow-lg shadow-emerald-900/50 transition-all hover:-translate-y-1"
+          >
+            Acessar Ferramenta de Disparos
+          </a>
+        </div>
       </main>
 
       {/* Footer */}
