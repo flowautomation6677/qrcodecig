@@ -382,7 +382,9 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
       return;
     }
     
-    setCampaign(prev => ({ ...prev, status: 'running' }));
+    // Atualiza o ref síncronamente para o loop enxergar imediatamente
+    campaignRef.current = { ...campaignRef.current, status: 'running' };
+    setCampaign(campaignRef.current);
     
     for (let i = campaignRef.current.currentContactIndex; i < contacts.length; i++) {
       if (campaignRef.current.status !== 'running') break;
@@ -391,7 +393,8 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
       const hasWhatsApp = await checkWhatsAppNumber(contact.number, i);
       
       if (!hasWhatsApp) {
-        setCampaign(prev => ({ ...prev, failed: prev.failed + 1, currentContactIndex: i + 1 }));
+        campaignRef.current = { ...campaignRef.current, failed: campaignRef.current.failed + 1, currentContactIndex: i + 1 };
+        setCampaign(campaignRef.current);
         continue;
       }
       
@@ -400,15 +403,17 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
       const finalText = parseSpintax(injectVariables(messageTemplate, contact));
       const success = await sendPresenceAndMessage(contact, finalText, i);
 
-      setCampaign(prev => ({ 
-        ...prev, 
-        sent: prev.sent + (success ? 1 : 0),
-        failed: prev.failed + (success ? 0 : 1),
+      campaignRef.current = { 
+        ...campaignRef.current, 
+        sent: campaignRef.current.sent + (success ? 1 : 0),
+        failed: campaignRef.current.failed + (success ? 0 : 1),
         currentContactIndex: i + 1 
-      }));
+      };
+      setCampaign(campaignRef.current);
 
       if (i === contacts.length - 1) {
-        setCampaign(prev => ({ ...prev, status: 'completed' }));
+        campaignRef.current = { ...campaignRef.current, status: 'completed' };
+        setCampaign(campaignRef.current);
         break;
       }
 
@@ -418,8 +423,15 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
     }
   };
 
-  const pauseCampaign = () => setCampaign(prev => ({ ...prev, status: 'paused' }));
-  const stopCampaign = () => setCampaign(prev => ({ ...prev, status: 'idle', currentContactIndex: 0, sent: 0, failed: 0 }));
+  const pauseCampaign = () => {
+    campaignRef.current = { ...campaignRef.current, status: 'paused' };
+    setCampaign(campaignRef.current);
+  };
+  
+  const stopCampaign = () => {
+    campaignRef.current = { ...campaignRef.current, status: 'idle', currentContactIndex: 0, sent: 0, failed: 0 };
+    setCampaign(campaignRef.current);
+  };
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white p-4 sm:p-8 font-sans selection:bg-emerald-500/30">
