@@ -348,8 +348,11 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
          return true;
       } else {
          const err = await sendRes.json();
-         const detailMsg = err.details?.message || err.details?.response?.message || JSON.stringify(err.details) || err.error;
-         updateLog(index, { status: 'failed', error: typeof detailMsg === 'string' ? detailMsg : 'Falha na API' });
+         let detailMsg = err.details?.message || err.details?.response?.message || err.details || err.error;
+         if (Array.isArray(detailMsg)) detailMsg = detailMsg.join(', ');
+         else if (typeof detailMsg === 'object') detailMsg = JSON.stringify(detailMsg);
+         
+         updateLog(index, { status: 'failed', error: detailMsg || 'Falha na API' });
          return false;
       }
     } catch (e: any) {
