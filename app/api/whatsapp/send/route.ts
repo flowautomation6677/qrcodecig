@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { action, number, message, instance, delay, mediaType } = body;
+    const { action, number, message, instance, delay, mediaType, mediaUrl, mediaBase64, fileName, caption, isPtt } = body;
 
     const instanceName = instance || process.env.EVOLUTION_INSTANCE_NAME;
     const apiUrl = process.env.EVOLUTION_API_URL?.replace(/\/$/, '');
@@ -20,10 +20,11 @@ export async function POST(request: Request) {
 
     // AÇÃO 1: Enviar Presença (Digitando / Gravando)
     if (action === 'presence') {
+      const presenceType = mediaType === 'audio' ? 'recording' : 'composing';
       const presencePayload = {
         number: number,
-        presence: mediaType === 'audio' ? 'recording' : 'composing',
-        delay: delay || 10000 // Tempo que ficará digitando em ms
+        presence: presenceType,
+        delay: delay || 5000 // Tempo de simulação em ms
       };
 
       const presenceResponse = await fetch(`${apiUrl}/chat/sendPresence/${encodeURIComponent(instanceName)}`, {
@@ -36,11 +37,10 @@ export async function POST(request: Request) {
       });
 
       if (!presenceResponse.ok) {
-        // Apenas ignora se a presence falhar, não impede o envio da mensagem
         console.warn('Falha ao enviar presence', await presenceResponse.text());
       }
       
-      return NextResponse.json({ success: true, message: 'Presence enviada' });
+      return NextResponse.json({ success: true, message: 'Presence enviada', presence: presenceType });
     }
 
     // AÇÃO 2: Validar Número (Opcional)
@@ -62,12 +62,11 @@ export async function POST(request: Request) {
         }
         
         const checkData = await checkResponse.json();
-        // A Evolution retorna um array com a flag exists, ou um objeto com validações
         const exists = Array.isArray(checkData) && checkData.length > 0 ? checkData[0]?.exists : true;
         return NextResponse.json({ exists, data: checkData });
     }
 
-    // AÇÃO 3: Enviar Mensagem (Texto)
+    // AÇÃO 3: Enviar Mensagem de Texto Puro
     if (action === 'sendText') {
       const sendPayload = {
         number: number,
@@ -94,12 +93,147 @@ export async function POST(request: Request) {
 
       if (!sendResponse.ok) {
         return NextResponse.json(
-          { error: 'Falha ao enviar mensagem', details: responseData },
+          { error: 'Falha ao enviar mensagem de texto', details: responseData },
           { status: sendResponse.status }
         );
       }
 
       return NextResponse.json({ success: true, data: responseData });
+    }
+
+    // AÇÃO 4: Enviar Imagem / Mídia Genérica (sendMedia)
+    if (action === 'sendMedia') {
+      const mediaData = mediaBase64 || mediaUrl;
+      if (!mediaData) {
+        return NextResponse.json({ error: 'Nenhuma mídia fornecida (URL ou arquivo).' }, { status: 400 });
+      }
+
+      const mediaPayload = {
+        number: number,
+        options: {
+          delay: 0,
+          presence: 'composing'
+        },
+        mediaMessage: {
+          mediatype: mediaType || 'image',
+          caption: caption || message || '',
+          media: mediaData,
+          fileName: fileName || (mediaType === 'image' ? 'imagem.jpg' : 'arquivo')
+        }
+      };
+
+      const sendResponse = await fetch(`${apiUrl}/message/sendMedia/${encodeURIComponent(instanceName)}`, {
+        method: 'POST',
+        headers: {
+          'apikey': apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(mediaPayload),
+      });
+
+      const responseData = await sendResponse.json();
+
+      if (!sendResponse.ok) {
+        return NextResponse.json(
+          { error: 'Falha ao enviar mídia', details: responseData },
+          { status: sendResponse.status }
+        );
+      }
+
+      return NextResponse.json({ success: true, data: responseData });
+    }
+
+    // AÇÃO 5: Enviar Áudio Gravado / PTT ou Arquivo de Áudio
+    if (action === 'sendAudio') {
+      const audioData = mediaBase64 || mediaUrl;
+      if (!audioData) {
+        return NextResponse.json({ error: 'Nenhum áudio fornecido (gravação ou arquivo).' }, { status: 400 });
+      }
+
+      // Se for PTT (nota de voz gravada), usa sendWhatsAppAudio
+      if (isPtt !== false) {
+        const audioPayload = {
+          number: number,
+          options: {
+            delay: 0,
+            presence: 'recording',
+            encoding: true
+          },
+          audioMessage: {
+            audio: audioData
+          }
+        };
+
+        const sendResponse = await fetch(`${apiUrl}/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`, {
+          method: 'POST',
+          headers: {
+            'apikey': apiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(audioPayload),
+        });
+
+        const responseData = await sendResponse.json();
+
+        if (!sendResponse.ok) {
+          // Fallback para sendMedia se sendWhatsAppAudio falhar
+          console.warn('Falha em sendWhatsAppAudio, tentando fallback para sendMedia...');
+          const fallbackResponse = await fetch(`${apiUrl}/message/sendMedia/${encodeURIComponent(instanceName)}`, {
+            method: 'POST',
+            headers: {
+              'apikey': apiKey,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              number: number,
+              mediaMessage: {
+                mediatype: 'audio',
+                media: audioData,
+                fileName: fileName || 'audio.mp3'
+              }
+            }),
+          });
+          
+          if (!fallbackResponse.ok) {
+            return NextResponse.json(
+              { error: 'Falha ao enviar áudio', details: responseData },
+              { status: sendResponse.status }
+            );
+          }
+          return NextResponse.json({ success: true, data: await fallbackResponse.json() });
+        }
+
+        return NextResponse.json({ success: true, data: responseData });
+      } else {
+        // Enviar como arquivo de áudio padrão
+        const mediaPayload = {
+          number: number,
+          mediaMessage: {
+            mediatype: 'audio',
+            caption: caption || '',
+            media: audioData,
+            fileName: fileName || 'audio.mp3'
+          }
+        };
+
+        const sendResponse = await fetch(`${apiUrl}/message/sendMedia/${encodeURIComponent(instanceName)}`, {
+          method: 'POST',
+          headers: {
+            'apikey': apiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(mediaPayload),
+        });
+
+        const responseData = await sendResponse.json();
+        if (!sendResponse.ok) {
+          return NextResponse.json(
+            { error: 'Falha ao enviar arquivo de áudio', details: responseData },
+            { status: sendResponse.status }
+          );
+        }
+        return NextResponse.json({ success: true, data: responseData });
+      }
     }
 
     return NextResponse.json({ error: 'Ação inválida' }, { status: 400 });
