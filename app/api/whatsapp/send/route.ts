@@ -104,7 +104,13 @@ export async function POST(request: Request) {
 
     // AÇÃO 4: Enviar Imagem / Mídia Genérica (sendMedia)
     if (action === 'sendMedia') {
-      const mediaData = mediaBase64 || mediaUrl;
+      let mediaData = mediaBase64 || mediaUrl;
+      
+      if (mediaData && mediaData.startsWith('data:')) {
+        // Remove o prefixo data:image/png;base64,
+        mediaData = mediaData.substring(mediaData.indexOf(',') + 1);
+      }
+
       if (!mediaData) {
         return NextResponse.json({ error: 'Nenhuma mídia fornecida (URL ou arquivo).' }, { status: 400 });
       }
@@ -150,7 +156,12 @@ export async function POST(request: Request) {
 
     // AÇÃO 5: Enviar Áudio Gravado / PTT ou Arquivo de Áudio
     if (action === 'sendAudio') {
-      const audioData = mediaBase64 || mediaUrl;
+      let audioData = mediaBase64 || mediaUrl;
+      
+      if (audioData && audioData.startsWith('data:')) {
+        audioData = audioData.substring(audioData.indexOf(',') + 1);
+      }
+
       if (!audioData) {
         return NextResponse.json({ error: 'Nenhum áudio fornecido (gravação ou arquivo).' }, { status: 400 });
       }
