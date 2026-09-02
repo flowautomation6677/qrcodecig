@@ -70,12 +70,13 @@ export async function POST(request: Request) {
     if (action === 'sendText') {
       const sendPayload = {
         number: number,
+        text: message, // Compatibilidade com Evolution API v2
         options: {
             delay: 0,
             presence: 'composing',
             linkPreview: true
         },
-        textMessage: {
+        textMessage: { // Compatibilidade com Evolution API v1
             text: message
         }
       };
@@ -110,11 +111,15 @@ export async function POST(request: Request) {
 
       const mediaPayload = {
         number: number,
+        mediatype: mediaType || 'image', // Evolution API v2
+        media: mediaData, // Evolution API v2
+        caption: caption || message || '', // Evolution API v2
+        fileName: fileName || (mediaType === 'image' ? 'imagem.jpg' : 'arquivo'), // Evolution API v2
         options: {
           delay: 0,
           presence: 'composing'
         },
-        mediaMessage: {
+        mediaMessage: { // Evolution API v1
           mediatype: mediaType || 'image',
           caption: caption || message || '',
           media: mediaData,
@@ -154,12 +159,13 @@ export async function POST(request: Request) {
       if (isPtt !== false) {
         const audioPayload = {
           number: number,
+          audio: audioData, // Evolution API v2
           options: {
             delay: 0,
             presence: 'recording',
             encoding: true
           },
-          audioMessage: {
+          audioMessage: { // Evolution API v1
             audio: audioData
           }
         };
@@ -186,7 +192,10 @@ export async function POST(request: Request) {
             },
             body: JSON.stringify({
               number: number,
-              mediaMessage: {
+              mediatype: 'audio', // Evolution API v2
+              media: audioData, // Evolution API v2
+              fileName: fileName || 'audio.mp3', // Evolution API v2
+              mediaMessage: { // Evolution API v1
                 mediatype: 'audio',
                 media: audioData,
                 fileName: fileName || 'audio.mp3'
@@ -208,7 +217,11 @@ export async function POST(request: Request) {
         // Enviar como arquivo de áudio padrão
         const mediaPayload = {
           number: number,
-          mediaMessage: {
+          mediatype: 'audio', // Evolution API v2
+          media: audioData, // Evolution API v2
+          caption: caption || '', // Evolution API v2
+          fileName: fileName || 'audio.mp3', // Evolution API v2
+          mediaMessage: { // Evolution API v1
             mediatype: 'audio',
             caption: caption || '',
             media: audioData,

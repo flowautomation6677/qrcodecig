@@ -348,7 +348,8 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
          return true;
       } else {
          const err = await sendRes.json();
-         updateLog(index, { status: 'failed', error: err.error || 'Falha no envio' });
+         const detailMsg = err.details?.message || err.details?.response?.message || JSON.stringify(err.details) || err.error;
+         updateLog(index, { status: 'failed', error: typeof detailMsg === 'string' ? detailMsg : 'Falha na API' });
          return false;
       }
     } catch (e: any) {
