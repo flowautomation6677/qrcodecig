@@ -110,6 +110,50 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
   const campaignRef = useRef(campaign);
   campaignRef.current = campaign;
 
+  // Novos Estados (Limites e Agendamento)
+  const [contactLimit, setContactLimit] = useState<number>(0);
+  const [isScheduled, setIsScheduled] = useState<boolean>(false);
+  const [scheduledTime, setScheduledTime] = useState<string>('');
+  const [campaignId, setCampaignId] = useState<string | null>(null);
+
+  // Polling para atualizar progresso do backend
+  React.useEffect(() => {
+    if (!campaignId || campaign.status === 'idle' || campaign.status === 'completed' || campaign.status === 'paused') return;
+    
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/campaign/${campaignId}`);
+        const data = await res.json();
+        if (data.campaign) {
+          campaignRef.current = { 
+            ...campaignRef.current, 
+            status: data.campaign.status,
+            total: data.campaign.total,
+            sent: data.campaign.sent,
+            failed: data.campaign.failed,
+            currentContactIndex: data.campaign.currentContactIndex
+          };
+          setCampaign(campaignRef.current);
+          
+          if (data.contacts) {
+            setLogs(data.contacts.map((c: any) => ({
+              number: c.number,
+              name: c.name,
+              type: messageMode,
+              status: c.status,
+              error: c.error,
+              time: c.sentAt ? new Date(c.sentAt).toLocaleTimeString() : undefined
+            })));
+          }
+        }
+      } catch (err) {
+        console.error('Polling error', err);
+      }
+    }, 2000);
+    
+    return () => clearInterval(interval);
+  }, [campaignId, campaign.status, messageMode]);
+
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
   const updateLog = (index: number, update: Partial<LogEntry>) => {
@@ -148,6 +192,10 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
           number: String(c.number).replace(/\D/g, '')
         })).filter(c => c.number.length >= 10);
         
+        if (contactLimit > 0) {
+          parsedContacts = parsedContacts.slice(0, contactLimit);
+        }
+
         setContacts(parsedContacts);
         setLogs(parsedContacts.map(c => ({ number: c.number, name: c.name, type: messageMode, status: 'pending' })));
         setCampaign(prev => ({ ...prev, total: parsedContacts.length, status: 'idle', currentContactIndex: 0, sent: 0, failed: 0 }));
@@ -375,7 +423,6 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
   const startCampaign = async () => {
     if (contacts.length === 0) return;
 
-    // Validações antes de iniciar
     if (messageMode === 'image' && !imageBase64 && !imageUrl) {
       alert('Por favor, carregue uma imagem ou informe a URL da imagem antes de iniciar o disparo.');
       return;
@@ -385,54 +432,54 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
       alert('Por favor, grave um áudio ou selecione um arquivo de áudio antes de iniciar o disparo.');
       return;
     }
-    
-    // Atualiza o ref síncronamente para o loop enxergar imediatamente
-    campaignRef.current = { ...campaignRef.current, status: 'running' };
-    setCampaign(campaignRef.current);
-    
-    for (let i = campaignRef.current.currentContactIndex; i < contacts.length; i++) {
-      if (campaignRef.current.status !== 'running') break;
-      
-      const contact = contacts[i];
-      const hasWhatsApp = await checkWhatsAppNumber(contact.number, i);
-      
-      if (!hasWhatsApp) {
-        campaignRef.current = { ...campaignRef.current, failed: campaignRef.current.failed + 1, currentContactIndex: i + 1 };
-        setCampaign(campaignRef.current);
-        continue;
-      }
-      
-      if (campaignRef.current.status !== 'running') break;
 
-      const finalText = parseSpintax(injectVariables(messageTemplate, contact));
-      const success = await sendPresenceAndMessage(contact, finalText, i);
+    try {
+      const response = await fetch('/api/campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instanceName,
+          messageMode,
+          messageTemplate,
+          mediaBase64: messageMode === 'image' && imageInputMethod === 'upload' ? imageBase64 : (messageMode === 'audio' && audioInputMethod !== 'url' ? audioBase64 : undefined),
+          mediaUrl: messageMode === 'image' && imageInputMethod === 'url' ? imageUrl : (messageMode === 'audio' && audioInputMethod === 'url' ? audioUrl : undefined),
+          fileName: messageMode === 'image' ? imageFileName : audioFileName,
+          isPtt: messageMode === 'audio' ? isPtt : true,
+          delayMin: minDelay,
+          delayMax: maxDelay,
+          batchSize,
+          batchPause,
+          contacts,
+          scheduledAt: isScheduled && scheduledTime ? new Date(scheduledTime).toISOString() : undefined
+        })
+      });
 
-      campaignRef.current = { 
-        ...campaignRef.current, 
-        sent: campaignRef.current.sent + (success ? 1 : 0),
-        failed: campaignRef.current.failed + (success ? 0 : 1),
-        currentContactIndex: i + 1 
-      };
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+      setCampaignId(data.campaignId);
+      campaignRef.current = { ...campaignRef.current, status: data.status, currentContactIndex: 0, sent: 0, failed: 0 };
       setCampaign(campaignRef.current);
+      
+      alert(data.status === 'scheduled' ? 'Campanha Agendada com Sucesso!' : 'Campanha Iniciada em Background!');
 
-      if (i === contacts.length - 1) {
-        campaignRef.current = { ...campaignRef.current, status: 'completed' };
-        setCampaign(campaignRef.current);
-        break;
-      }
-
-      if (campaignRef.current.status === 'running') {
-        await handleCampaignCadence(i);
-      }
+    } catch (err: any) {
+      alert('Erro ao iniciar campanha: ' + err.message);
     }
   };
 
-  const pauseCampaign = () => {
+  const pauseCampaign = async () => {
+    if (campaignId) {
+      await fetch(`/api/campaign/${campaignId}`, { method: 'DELETE' });
+    }
     campaignRef.current = { ...campaignRef.current, status: 'paused' };
     setCampaign(campaignRef.current);
   };
   
-  const stopCampaign = () => {
+  const stopCampaign = async () => {
+    if (campaignId) {
+      await fetch(`/api/campaign/${campaignId}`, { method: 'DELETE' });
+    }
     campaignRef.current = { ...campaignRef.current, status: 'idle', currentContactIndex: 0, sent: 0, failed: 0 };
     setCampaign(campaignRef.current);
   };
@@ -834,6 +881,50 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
               <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-zinc-500">
                 <span className="bg-black/40 px-2 py-1 rounded border border-zinc-800">Spintax: &#123;Oi|Olá|Opa&#125;</span>
                 <span className="bg-black/40 px-2 py-1 rounded border border-zinc-800">Variáveis: &#123;nome&#125;, &#123;numero&#125;</span>
+              </div>
+            </div>
+
+            {/* Agendamento e Limites */}
+            <div className="bg-zinc-900/40 p-6 rounded-3xl border border-zinc-800/60 backdrop-blur-md shadow-2xl relative overflow-hidden mb-6">
+               <h2 className="text-lg font-semibold flex items-center gap-2 mb-6 text-zinc-100">
+                <Clock className="w-5 h-5 text-purple-400" />
+                Agendamento e Limites
+              </h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="flex items-center gap-2 cursor-pointer mb-2">
+                    <input 
+                      type="checkbox" 
+                      checked={isScheduled} 
+                      onChange={(e) => setIsScheduled(e.target.checked)}
+                      className="accent-purple-500 w-4 h-4 rounded" 
+                      disabled={campaign.status !== 'idle'}
+                    />
+                    <span className="text-sm text-zinc-300 font-medium">Agendar Disparo (Data/Hora)</span>
+                  </label>
+                  {isScheduled && (
+                    <input 
+                      type="datetime-local" 
+                      value={scheduledTime}
+                      onChange={(e) => setScheduledTime(e.target.value)}
+                      className="w-full bg-black/50 border border-zinc-700/50 rounded-lg p-2.5 text-sm text-zinc-200 focus:outline-none focus:border-purple-500"
+                      disabled={campaign.status !== 'idle'}
+                    />
+                  )}
+                </div>
+                <div className="pt-2 border-t border-zinc-800/50">
+                   <label className="text-sm text-zinc-300 font-medium block mb-2">Limite de Envios (0 = Todos os contatos)</label>
+                   <input 
+                     type="number" 
+                     value={contactLimit} 
+                     onChange={e => setContactLimit(Number(e.target.value))} 
+                     min="0"
+                     className="w-full bg-black/50 border border-zinc-700/50 rounded-lg p-2.5 text-sm text-zinc-300" 
+                     disabled={campaign.status !== 'idle'}
+                     placeholder="Ex: 50"
+                   />
+                </div>
               </div>
             </div>
 
