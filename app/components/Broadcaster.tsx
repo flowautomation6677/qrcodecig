@@ -3,10 +3,9 @@
 import React, { useState, useRef } from 'react';
 import Papa from 'papaparse';
 import { 
-  Play, Pause, Square, Upload, Users, Clock, AlertTriangle, 
-  CheckCircle2, XCircle, Send, MessageSquare, Image as ImageIcon, 
-  Mic, MicOff, Trash2, Volume2, Sparkles, FileAudio, Link as LinkIcon,
-  Check, Video
+  CheckCircle2, XCircle, MessageSquare, Image as ImageIcon, 
+  Mic, MicOff, Trash2, Volume2, FileAudio, Link as LinkIcon,
+  Check, Video, Play, Pause, Square, Upload, Clock, PlusCircle
 } from 'lucide-react';
 
 interface Contact {
@@ -62,6 +61,9 @@ const injectVariables = (text: string, contact: Contact) => {
 };
 
 export default function Broadcaster({ instanceName }: Readonly<{ instanceName: string }>) {
+  // Campaign Name
+  const [campaignName, setCampaignName] = useState('Campanha ' + new Date().toLocaleDateString('pt-BR'));
+
   // Mode selection
   const [messageMode, setMessageMode] = useState<MessageMode>('text');
 
