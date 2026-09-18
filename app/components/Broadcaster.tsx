@@ -6,7 +6,7 @@ import {
   Play, Pause, Square, Upload, Users, Clock, AlertTriangle, 
   CheckCircle2, XCircle, Send, MessageSquare, Image as ImageIcon, 
   Mic, MicOff, Trash2, Volume2, Sparkles, FileAudio, Link as LinkIcon,
-  Check
+  Check, Video
 } from 'lucide-react';
 
 interface Contact {
@@ -32,7 +32,7 @@ interface LogEntry {
   time?: string;
 }
 
-type MessageMode = 'text' | 'image' | 'audio';
+type MessageMode = 'text' | 'image' | 'audio' | 'video';
 
 // Spintax parser: {Olá|Oi|Opa}
 const parseSpintax = (text: string) => {
@@ -74,6 +74,12 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
   const [imageUrl, setImageUrl] = useState<string>('');
   const [imageFileName, setImageFileName] = useState<string>('');
   const [imageInputMethod, setImageInputMethod] = useState<'upload' | 'url'>('upload');
+
+  // Video State
+  const [videoBase64, setVideoBase64] = useState<string>('');
+  const [videoUrl, setVideoUrl] = useState<string>('');
+  const [videoFileName, setVideoFileName] = useState<string>('');
+  const [videoInputMethod, setVideoInputMethod] = useState<'upload' | 'url'>('upload');
 
   // Audio State
   const [audioBase64, setAudioBase64] = useState<string>('');
@@ -217,6 +223,29 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
     const reader = new FileReader();
     reader.onload = (event) => {
       setImageBase64(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Video Upload Handler
+  const handleVideoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('video/')) {
+      alert('Por favor, selecione um arquivo de vídeo válido (MP4, WEBM, etc).');
+      return;
+    }
+
+    if (file.size > 16 * 1024 * 1024) {
+      alert('O vídeo é muito grande. O limite recomendado é 16MB para WhatsApp.');
+      return;
+    }
+
+    setVideoFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setVideoBase64(event.target?.result as string);
     };
     reader.readAsDataURL(file);
   };
@@ -428,6 +457,11 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
       return;
     }
 
+    if (messageMode === 'video' && !videoBase64 && !videoUrl) {
+      alert('Por favor, carregue um vídeo ou informe a URL do vídeo antes de iniciar o disparo.');
+      return;
+    }
+
     if (messageMode === 'audio' && !audioBase64 && !audioUrl) {
       alert('Por favor, grave um áudio ou selecione um arquivo de áudio antes de iniciar o disparo.');
       return;
@@ -438,12 +472,13 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          name: campaignName,
           instanceName,
           messageMode,
           messageTemplate,
-          mediaBase64: messageMode === 'image' && imageInputMethod === 'upload' ? imageBase64 : (messageMode === 'audio' && audioInputMethod !== 'url' ? audioBase64 : undefined),
-          mediaUrl: messageMode === 'image' && imageInputMethod === 'url' ? imageUrl : (messageMode === 'audio' && audioInputMethod === 'url' ? audioUrl : undefined),
-          fileName: messageMode === 'image' ? imageFileName : audioFileName,
+          mediaBase64: messageMode === 'image' && imageInputMethod === 'upload' ? imageBase64 : (messageMode === 'audio' && audioInputMethod !== 'url' ? audioBase64 : (messageMode === 'video' && videoInputMethod === 'upload' ? videoBase64 : undefined)),
+          mediaUrl: messageMode === 'image' && imageInputMethod === 'url' ? imageUrl : (messageMode === 'audio' && audioInputMethod === 'url' ? audioUrl : (messageMode === 'video' && videoInputMethod === 'url' ? videoUrl : undefined)),
+          fileName: messageMode === 'image' ? imageFileName : (messageMode === 'audio' ? audioFileName : (messageMode === 'video' ? videoFileName : undefined)),
           isPtt: messageMode === 'audio' ? isPtt : true,
           delayMin: minDelay,
           delayMax: maxDelay,
@@ -485,46 +520,70 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 sm:p-8 font-sans selection:bg-emerald-500/30">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <div className="min-h-screen bg-black text-white font-sans selection:bg-emerald-500/30">
+      <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8">
         
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800 pb-6">
+        {/* Header Nova Campanha */}
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between border-b border-zinc-800/80 pb-6 mb-8 mt-2">
           <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent flex items-center gap-3">
-              <Send className="w-8 h-8 text-emerald-400" />
-              NEXUS Messenger
+            <h1 className="text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-teal-200">
+              Criar Nova Campanha
             </h1>
-            <p className="text-zinc-400 mt-2">Disparador de Alta Conversão & Anti-Ban com Suporte Multimídia</p>
+            <p className="text-zinc-400 mt-2 text-sm max-w-xl">
+              Configure os contatos, a mensagem e as regras de disparo. Você pode iniciar agora ou agendar para depois.
+            </p>
           </div>
-          <div className="flex items-center gap-4 bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800/50 backdrop-blur-xl self-start sm:self-auto">
-             <div className="text-right">
-               <p className="text-xs text-zinc-400">Instância Conectada</p>
-               <p className="font-semibold text-emerald-400">{instanceName || 'Aguardando...'}</p>
+          <div className="mt-4 sm:mt-0">
+             <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800">
+                <span className="text-[10px] uppercase font-bold text-zinc-500">Instância Conectada</span>
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-400">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
+                  {instanceName || 'Não conectada'}
+                </span>
              </div>
-             <div className="w-3.5 h-3.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.7)]"></div>
           </div>
-        </div>
+        </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
           {/* Left Column - Config & Composer */}
-          <div className="lg:col-span-5 space-y-6">
+          <div className="lg:col-span-5 flex flex-col space-y-6">
+
+            {/* Passo 1: Informações Básicas */}
+            <div className="bg-zinc-900/40 p-6 rounded-3xl border border-zinc-800/60 backdrop-blur-md shadow-2xl relative overflow-hidden">
+               <h2 className="text-lg font-semibold flex items-center gap-2 mb-5 text-zinc-100">
+                <span className="bg-emerald-500/20 text-emerald-400 w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
+                Informações da Campanha
+              </h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-semibold text-zinc-400 block mb-2">Nome da Campanha</label>
+                  <input 
+                    type="text" 
+                    value={campaignName}
+                    onChange={(e) => setCampaignName(e.target.value)}
+                    className="w-full bg-black/50 border border-zinc-700/50 rounded-xl p-3 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all"
+                    disabled={campaign.status !== 'idle'}
+                    placeholder="Ex: Oferta Black Friday"
+                  />
+                </div>
+              </div>
+            </div>
             
-            {/* Contacts Input */}
-            <div className="bg-zinc-900/40 p-6 rounded-3xl border border-zinc-800/60 backdrop-blur-md shadow-2xl relative overflow-hidden group">
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-zinc-800 to-zinc-700 group-hover:from-emerald-500 group-hover:to-cyan-500 transition-all duration-500"></div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold flex items-center gap-2 text-zinc-100">
-                  <Users className="w-5 h-5 text-emerald-400" />
+            {/* Passo 2: Destinatários */}
+            <div className="bg-zinc-900/40 p-6 rounded-3xl border border-zinc-800/60 backdrop-blur-md shadow-2xl relative overflow-hidden group hover:border-emerald-500/30 transition-colors">
+              <h2 className="text-lg font-semibold flex items-center justify-between mb-5 text-zinc-100">
+                <span className="flex items-center gap-2">
+                  <span className="bg-emerald-500/20 text-emerald-400 w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
                   Destinatários (CSV ou Lista)
-                </h2>
+                </span>
                 {contacts.length > 0 && (
-                  <span className="text-xs font-mono bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                    {contacts.length} contatos prontos
+                  <span className="text-xs font-medium px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    {contacts.length} contatos
                   </span>
                 )}
-              </div>
+              </h2>
               <textarea 
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
@@ -535,31 +594,27 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
               <button 
                 onClick={processInput}
                 disabled={campaign.status === 'running' || !inputText.trim()}
-                className="mt-3 w-full bg-zinc-800 hover:bg-zinc-700 text-white py-2.5 rounded-xl font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-sm shadow-md"
+                className="mt-3 w-full bg-zinc-800 hover:bg-zinc-700 text-white py-2.5 rounded-xl font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-sm shadow-md cursor-pointer"
               >
                 <Upload className="w-4 h-4" />
                 Processar e Carregar Lista
               </button>
             </div>
 
-            {/* Multimodal Message Composer */}
-            <div className="bg-zinc-900/40 p-6 rounded-3xl border border-zinc-800/60 backdrop-blur-md shadow-2xl relative overflow-hidden group">
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-zinc-800 to-zinc-700 group-hover:from-emerald-500 group-hover:to-cyan-500 transition-all duration-500"></div>
-              
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-zinc-100 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-cyan-400" />
-                  Compositor Multimídia
-                </h2>
-              </div>
+            {/* Passo 3: Compositor Multimídia */}
+            <div className="bg-zinc-900/40 p-6 rounded-3xl border border-zinc-800/60 backdrop-blur-md shadow-2xl relative overflow-hidden">
+              <h2 className="text-lg font-semibold flex items-center gap-2 mb-6 text-zinc-100">
+                <span className="bg-emerald-500/20 text-emerald-400 w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span>
+                Mensagem
+              </h2>
 
               {/* Message Mode Tabs */}
-              <div className="grid grid-cols-3 gap-2 p-1 bg-black/60 rounded-2xl border border-zinc-800 mb-5">
+              <div className="grid grid-cols-4 gap-2 p-1 bg-black/60 rounded-2xl border border-zinc-800 mb-5">
                 <button
                   type="button"
                   onClick={() => setMessageMode('text')}
                   disabled={campaign.status === 'running'}
-                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-medium text-xs sm:text-sm transition-all ${
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-medium text-xs sm:text-sm transition-all cursor-pointer ${
                     messageMode === 'text'
                       ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20 font-bold'
                       : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
@@ -573,7 +628,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                   type="button"
                   onClick={() => setMessageMode('image')}
                   disabled={campaign.status === 'running'}
-                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-medium text-xs sm:text-sm transition-all ${
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-medium text-xs sm:text-sm transition-all cursor-pointer ${
                     messageMode === 'image'
                       ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/20 font-bold'
                       : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
@@ -587,7 +642,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                   type="button"
                   onClick={() => setMessageMode('audio')}
                   disabled={campaign.status === 'running'}
-                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-medium text-xs sm:text-sm transition-all ${
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-medium text-xs sm:text-sm transition-all cursor-pointer ${
                     messageMode === 'audio'
                       ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20 font-bold'
                       : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
@@ -595,6 +650,20 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                 >
                   <Mic className="w-4 h-4" />
                   Áudio
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setMessageMode('video')}
+                  disabled={campaign.status === 'running'}
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-medium text-xs sm:text-sm transition-all cursor-pointer ${
+                    messageMode === 'video'
+                      ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20 font-bold'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                  }`}
+                >
+                  <Video className="w-4 h-4" />
+                  Vídeo
                 </button>
               </div>
 
@@ -609,14 +678,14 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                       <button
                         type="button"
                         onClick={() => setImageInputMethod('upload')}
-                        className={`px-2.5 py-1 rounded-lg transition-all ${imageInputMethod === 'upload' ? 'bg-cyan-500/20 text-cyan-300 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${imageInputMethod === 'upload' ? 'bg-cyan-500/20 text-cyan-300 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
                       >
                         Upload Arquivo
                       </button>
                       <button
                         type="button"
                         onClick={() => setImageInputMethod('url')}
-                        className={`px-2.5 py-1 rounded-lg transition-all ${imageInputMethod === 'url' ? 'bg-cyan-500/20 text-cyan-300 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${imageInputMethod === 'url' ? 'bg-cyan-500/20 text-cyan-300 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
                       >
                         Link URL
                       </button>
@@ -647,7 +716,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                             <button 
                               type="button" 
                               onClick={() => { setImageBase64(''); setImageFileName(''); }} 
-                              className="text-red-400 hover:text-red-300 flex items-center gap-1"
+                              className="text-red-400 hover:text-red-300 flex items-center gap-1 cursor-pointer"
                               disabled={campaign.status === 'running'}
                             >
                               <Trash2 className="w-3.5 h-3.5" /> Remover
@@ -687,6 +756,93 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                 </div>
               )}
 
+              {/* VIDEO ATTACHMENT SECTION */}
+              {messageMode === 'video' && (
+                <div className="mb-5 p-4 rounded-2xl bg-black/40 border border-zinc-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
+                      <Video className="w-4 h-4" /> Anexo de Vídeo
+                    </span>
+                    <div className="flex gap-1 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setVideoInputMethod('upload')}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${videoInputMethod === 'upload' ? 'bg-rose-500/20 text-rose-300 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      >
+                        Upload Arquivo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVideoInputMethod('url')}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${videoInputMethod === 'url' ? 'bg-rose-500/20 text-rose-300 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      >
+                        Link URL
+                      </button>
+                    </div>
+                  </div>
+
+                  {videoInputMethod === 'upload' ? (
+                    <div>
+                      {!videoBase64 ? (
+                        <label className="flex flex-col items-center justify-center border-2 border-dashed border-zinc-700 hover:border-rose-500/60 rounded-xl p-6 cursor-pointer transition-all bg-zinc-900/30 hover:bg-zinc-900/60 group">
+                          <Video className="w-8 h-8 text-zinc-500 group-hover:text-rose-400 transition-colors mb-2" />
+                          <span className="text-xs font-medium text-zinc-300 group-hover:text-white">Clique para selecionar o vídeo</span>
+                          <span className="text-[11px] text-zinc-500 mt-1">MP4, WEBM (máx 16MB)</span>
+                          <input 
+                            type="file" 
+                            accept="video/*" 
+                            onChange={handleVideoFileChange} 
+                            className="hidden" 
+                            disabled={campaign.status === 'running'}
+                          />
+                        </label>
+                      ) : (
+                        <div className="relative rounded-xl overflow-hidden border border-rose-500/30 bg-black/60 p-2">
+                          <video src={videoBase64} controls className="max-h-48 w-full rounded-lg bg-black" />
+                          <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-800 text-xs text-zinc-400 px-1">
+                            <span className="truncate max-w-[200px]">{videoFileName || 'Vídeo carregado'}</span>
+                            <button 
+                              type="button" 
+                              onClick={() => { setVideoBase64(''); setVideoFileName(''); }} 
+                              className="text-red-400 hover:text-red-300 flex items-center gap-1 cursor-pointer"
+                              disabled={campaign.status === 'running'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> Remover
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <LinkIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                          <input 
+                            type="url" 
+                            placeholder="https://exemplo.com/video.mp4"
+                            value={videoUrl}
+                            onChange={(e) => setVideoUrl(e.target.value)}
+                            className="w-full bg-black/60 border border-zinc-700/60 rounded-xl pl-9 pr-3 py-2.5 text-xs text-zinc-200 focus:outline-none focus:border-rose-500"
+                            disabled={campaign.status === 'running'}
+                          />
+                        </div>
+                      </div>
+                      {videoUrl && (
+                        <div className="relative rounded-xl overflow-hidden border border-zinc-800 bg-black/60 p-2">
+                          <video 
+                            src={videoUrl} 
+                            controls
+                            className="max-h-40 w-full rounded-lg bg-black"
+                            onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* AUDIO ATTACHMENT SECTION */}
               {messageMode === 'audio' && (
                 <div className="mb-5 p-4 rounded-2xl bg-black/40 border border-zinc-800 space-y-4">
@@ -698,21 +854,21 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                       <button
                         type="button"
                         onClick={() => setAudioInputMethod('record')}
-                        className={`px-2.5 py-1 rounded-lg transition-all ${audioInputMethod === 'record' ? 'bg-purple-500/20 text-purple-300 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${audioInputMethod === 'record' ? 'bg-purple-500/20 text-purple-300 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
                       >
                         Gravar Voz
                       </button>
                       <button
                         type="button"
                         onClick={() => setAudioInputMethod('upload')}
-                        className={`px-2.5 py-1 rounded-lg transition-all ${audioInputMethod === 'upload' ? 'bg-purple-500/20 text-purple-300 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${audioInputMethod === 'upload' ? 'bg-purple-500/20 text-purple-300 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
                       >
                         Upload Arquivo
                       </button>
                       <button
                         type="button"
                         onClick={() => setAudioInputMethod('url')}
-                        className={`px-2.5 py-1 rounded-lg transition-all ${audioInputMethod === 'url' ? 'bg-purple-500/20 text-purple-300 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${audioInputMethod === 'url' ? 'bg-purple-500/20 text-purple-300 font-medium' : 'text-zinc-500 hover:text-zinc-300'}`}
                       >
                         Link URL
                       </button>
@@ -847,13 +1003,13 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-semibold text-zinc-400">
-                    {messageMode === 'image' ? 'Legenda da Imagem (Opcional)' : messageMode === 'audio' ? 'Texto de Acompanhamento (Opcional)' : 'Mensagem de Texto'}
+                    {messageMode === 'image' ? 'Legenda da Imagem (Opcional)' : messageMode === 'video' ? 'Legenda do Vídeo (Opcional)' : messageMode === 'audio' ? 'Texto de Acompanhamento (Opcional)' : 'Mensagem de Texto'}
                   </label>
                   <div className="flex gap-1">
                     <button
                       type="button"
                       onClick={() => insertVariable('{nome}')}
-                      className="text-[11px] bg-zinc-800 hover:bg-zinc-700 text-emerald-400 px-2 py-0.5 rounded font-mono transition-colors"
+                      className="text-[11px] bg-zinc-800 hover:bg-zinc-700 text-emerald-400 px-2 py-0.5 rounded font-mono transition-colors cursor-pointer"
                       title="Insere {nome} dinâmico do contato"
                     >
                       +&#123;nome&#125;
@@ -861,7 +1017,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                     <button
                       type="button"
                       onClick={() => insertVariable('{Olá|Oi|Opa}')}
-                      className="text-[11px] bg-zinc-800 hover:bg-zinc-700 text-cyan-400 px-2 py-0.5 rounded font-mono transition-colors"
+                      className="text-[11px] bg-zinc-800 hover:bg-zinc-700 text-cyan-400 px-2 py-0.5 rounded font-mono transition-colors cursor-pointer"
                       title="Insere variação Spintax"
                     >
                       +Spintax
@@ -884,10 +1040,10 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
               </div>
             </div>
 
-            {/* Agendamento e Limites */}
-            <div className="bg-zinc-900/40 p-6 rounded-3xl border border-zinc-800/60 backdrop-blur-md shadow-2xl relative overflow-hidden mb-6">
+            {/* Passo 4: Agendamento e Limites */}
+            <div className="bg-zinc-900/40 p-6 rounded-3xl border border-zinc-800/60 backdrop-blur-md shadow-2xl relative overflow-hidden">
                <h2 className="text-lg font-semibold flex items-center gap-2 mb-6 text-zinc-100">
-                <Clock className="w-5 h-5 text-purple-400" />
+                <span className="bg-emerald-500/20 text-emerald-400 w-6 h-6 rounded-full flex items-center justify-center text-xs">4</span>
                 Agendamento e Limites
               </h2>
               
@@ -928,10 +1084,10 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
               </div>
             </div>
 
-            {/* Anti-ban Settings */}
+            {/* Passo 5: Anti-ban Settings */}
             <div className="bg-zinc-900/40 p-6 rounded-3xl border border-zinc-800/60 backdrop-blur-md shadow-2xl relative overflow-hidden">
                <h2 className="text-lg font-semibold flex items-center gap-2 mb-6 text-zinc-100">
-                <Clock className="w-5 h-5 text-emerald-400" />
+                <span className="bg-emerald-500/20 text-emerald-400 w-6 h-6 rounded-full flex items-center justify-center text-xs">5</span>
                 Cadência Anti-Ban
               </h2>
               
@@ -1012,6 +1168,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                    Modo Atual:
                    {messageMode === 'text' && <strong className="text-emerald-400 flex items-center gap-1"><MessageSquare className="w-3.5 h-3.5"/> Texto Puro</strong>}
                    {messageMode === 'image' && <strong className="text-cyan-400 flex items-center gap-1"><ImageIcon className="w-3.5 h-3.5"/> Imagem + Legenda</strong>}
+                   {messageMode === 'video' && <strong className="text-rose-400 flex items-center gap-1"><Video className="w-3.5 h-3.5"/> Vídeo + Legenda</strong>}
                    {messageMode === 'audio' && <strong className="text-purple-400 flex items-center gap-1"><Mic className="w-3.5 h-3.5"/> Áudio {isPtt ? '(Nota de Voz PTT)' : '(Arquivo)'}</strong>}
                  </span>
                  <span className="text-zinc-500 font-mono">
@@ -1026,7 +1183,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                      disabled={contacts.length === 0}
                      className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black py-4 rounded-2xl font-bold transition-all shadow-[0_0_25px_rgba(16,185,129,0.3)] hover:shadow-[0_0_35px_rgba(16,185,129,0.5)] flex items-center justify-center gap-2 disabled:opacity-50 disabled:shadow-none cursor-pointer"
                    >
-                     <Play className="w-5 h-5" fill="currentColor"/> {campaign.status === 'paused' ? 'Retomar Disparo' : 'Iniciar Campanha Multimídia'}
+                     <Play className="w-5 h-5" fill="currentColor"/> {campaign.status === 'paused' ? 'Retomar Disparo' : 'Programar / Iniciar Campanha'}
                    </button>
                  ) : (
                    <button 
@@ -1100,6 +1257,11 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                              {log.type === 'image' && (
                                <span className="inline-flex items-center gap-1 text-[11px] bg-cyan-500/10 text-cyan-400 px-2 py-0.5 rounded font-medium">
                                  <ImageIcon className="w-3 h-3" /> Imagem
+                               </span>
+                             )}
+                             {log.type === 'video' && (
+                               <span className="inline-flex items-center gap-1 text-[11px] bg-rose-500/10 text-rose-400 px-2 py-0.5 rounded font-medium">
+                                 <Video className="w-3 h-3" /> Vídeo
                                </span>
                              )}
                              {log.type === 'audio' && (

@@ -2,10 +2,35 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/src/lib/prisma';
 import { campaignQueue } from '@/src/lib/queue';
 
+export const dynamic = 'force-dynamic';
+
+export async function GET() {
+  try {
+    const campaigns = await prisma.campaign.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: { contacts: true }
+        }
+      }
+    });
+
+    // Count sent and failed using raw or separate queries, 
+    // but Prisma makes it easier with a mapping or we can fetch contacts if needed.
+    // To keep it light, we can fetch the contacts for stats, or just use the count.
+    
+    // For Dashboard, we just return the campaigns.
+    return NextResponse.json({ campaigns });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const {
+      name,
       instanceName,
       messageMode,
       messageTemplate,
@@ -41,6 +66,7 @@ export async function POST(req: Request) {
     // 1. Criar a Campanha no Banco
     const campaign = await prisma.campaign.create({
       data: {
+        name: name || 'Nova Campanha',
         instanceName,
         messageMode,
         messageTemplate,

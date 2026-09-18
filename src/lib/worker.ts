@@ -107,14 +107,15 @@ const worker = new Worker('campaign-queue', async (job: Job) => {
 
       // 2. Presence
       const isAudio = campaign.messageMode === 'audio';
-      const typingDelay = isAudio ? 5000 : Math.min(Math.max(finalText.length * 50, 3000), 12000);
+      const isVideo = campaign.messageMode === 'video';
+      const typingDelay = isAudio ? 5000 : (isVideo ? 8000 : Math.min(Math.max(finalText.length * 50, 3000), 12000));
       
       await sendToEvolutionAPI({
         action: 'presence',
         number: contact.number,
         instance: campaign.instanceName,
         delay: typingDelay,
-        mediaType: isAudio ? 'audio' : 'text'
+        mediaType: isAudio ? 'audio' : (isVideo ? 'video' : 'text')
       });
       await delay(typingDelay);
 
@@ -135,6 +136,17 @@ const worker = new Worker('campaign-queue', async (job: Job) => {
           mediaBase64: campaign.mediaBase64,
           mediaUrl: campaign.mediaUrl,
           fileName: campaign.fileName || 'imagem.jpg',
+          caption: finalText,
+          instance: campaign.instanceName
+        });
+      } else if (campaign.messageMode === 'video') {
+        sendRes = await sendToEvolutionAPI({
+          action: 'sendMedia',
+          number: contact.number,
+          mediaType: 'video',
+          mediaBase64: campaign.mediaBase64,
+          mediaUrl: campaign.mediaUrl,
+          fileName: campaign.fileName || 'video.mp4',
           caption: finalText,
           instance: campaign.instanceName
         });

@@ -13,8 +13,9 @@ datasource db {
 
 model Campaign {
   id              String    @id @default(uuid())
+  name            String    @default("Nova Campanha")
   instanceName    String
-  messageMode     String    @default("text") // text, image, audio
+  messageMode     String    @default("text") // text, image, audio, video
   messageTemplate String
   
   // Media fields
