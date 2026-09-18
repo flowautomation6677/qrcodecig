@@ -26,7 +26,7 @@ interface CampaignStatus {
 interface LogEntry {
   number: string;
   name?: string;
-  type: 'text' | 'image' | 'audio';
+  type: MessageMode;
   status: 'pending' | 'checking' | 'typing' | 'recording' | 'sent' | 'failed';
   error?: string;
   time?: string;
