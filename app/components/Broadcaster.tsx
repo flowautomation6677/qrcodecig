@@ -5,7 +5,7 @@ import Papa from 'papaparse';
 import { 
   CheckCircle2, XCircle, MessageSquare, Image as ImageIcon, 
   Mic, MicOff, Trash2, Volume2, FileAudio, Link as LinkIcon,
-  Check, Video, Play, Pause, Square, Upload, Clock, PlusCircle
+  Check, Video, Play, Pause, Square, Upload, Clock, PlusCircle, AlertTriangle
 } from 'lucide-react';
 
 interface Contact {
