@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "next start -H 0.0.0.0 -p 3000",
+    "start": "npm run worker & next start -H 0.0.0.0 -p 3000",
     "lint": "next lint",
     "worker": "tsx src/lib/worker.ts"
   },
