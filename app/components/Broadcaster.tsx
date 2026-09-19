@@ -118,6 +118,13 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
   const campaignRef = useRef(campaign);
   campaignRef.current = campaign;
 
+  // Custom Toast Notification
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'warning'} | null>(null);
+  const showToast = (message: string, type: 'success' | 'error' | 'warning' = 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 5000);
+  };
+
   // Novos Estados (Limites e Agendamento)
   const [contactLimit, setContactLimit] = useState<number>(0);
   const [isScheduled, setIsScheduled] = useState<boolean>(false);
@@ -195,10 +202,17 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
            });
         }
         
-        parsedContacts = parsedContacts.map(c => ({
-          ...c,
-          number: String(c.number).replace(/\D/g, '')
-        })).filter(c => c.number.length >= 10);
+        parsedContacts = parsedContacts.map(c => {
+          let cleanNumber = String(c.number).replace(/\D/g, '');
+          // Adiciona 55 automaticamente se não tiver e for um DDD + número válido (10 ou 11 dígitos)
+          if (!cleanNumber.startsWith('55') && (cleanNumber.length === 10 || cleanNumber.length === 11)) {
+            cleanNumber = '55' + cleanNumber;
+          }
+          return {
+            ...c,
+            number: cleanNumber
+          };
+        }).filter(c => c.number.length >= 12);
         
         if (contactLimit > 0) {
           parsedContacts = parsedContacts.slice(0, contactLimit);
@@ -217,7 +231,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('Por favor, selecione um arquivo de imagem válido (JPG, PNG, WebP, etc).');
+      showToast('Por favor, selecione um arquivo de imagem válido (JPG, PNG, WebP, etc).', 'warning');
       return;
     }
 
@@ -235,12 +249,12 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
     if (!file) return;
 
     if (!file.type.startsWith('video/')) {
-      alert('Por favor, selecione um arquivo de vídeo válido (MP4, WEBM, etc).');
+      showToast('Por favor, selecione um arquivo de vídeo válido (MP4, WEBM, etc).', 'warning');
       return;
     }
 
     if (file.size > 16 * 1024 * 1024) {
-      alert('O vídeo é muito grande. O limite recomendado é 16MB para WhatsApp.');
+      showToast('O vídeo é muito grande. O limite recomendado é 16MB para WhatsApp.', 'warning');
       return;
     }
 
@@ -452,20 +466,23 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
   };
 
   const startCampaign = async () => {
-    if (contacts.length === 0) return;
+    if (contacts.length === 0) {
+      showToast('Por favor, adicione contatos antes de iniciar.', 'warning');
+      return;
+    }
 
     if (messageMode === 'image' && !imageBase64 && !imageUrl) {
-      alert('Por favor, carregue uma imagem ou informe a URL da imagem antes de iniciar o disparo.');
+      showToast('Por favor, carregue uma imagem ou informe a URL da imagem antes de iniciar o disparo.', 'warning');
       return;
     }
 
     if (messageMode === 'video' && !videoBase64 && !videoUrl) {
-      alert('Por favor, carregue um vídeo ou informe a URL do vídeo antes de iniciar o disparo.');
+      showToast('Por favor, carregue um vídeo ou informe a URL do vídeo antes de iniciar o disparo.', 'warning');
       return;
     }
 
     if (messageMode === 'audio' && !audioBase64 && !audioUrl) {
-      alert('Por favor, grave um áudio ou selecione um arquivo de áudio antes de iniciar o disparo.');
+      showToast('Por favor, grave um áudio ou selecione um arquivo de áudio antes de iniciar o disparo.', 'warning');
       return;
     }
 
@@ -498,10 +515,10 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
       campaignRef.current = { ...campaignRef.current, status: data.status, currentContactIndex: 0, sent: 0, failed: 0 };
       setCampaign(campaignRef.current);
       
-      alert(data.status === 'scheduled' ? 'Campanha Agendada com Sucesso!' : 'Campanha Iniciada em Background!');
+      showToast(data.status === 'scheduled' ? 'Campanha Agendada com Sucesso!' : 'Campanha Iniciada em Background!', 'success');
 
     } catch (err: any) {
-      alert('Erro ao iniciar campanha: ' + err.message);
+      showToast('Erro ao iniciar campanha: \n' + err.message, 'error');
     }
   };
 
@@ -523,6 +540,25 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
 
   return (
     <div className="min-h-screen bg-black text-white font-sans selection:bg-emerald-500/30">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed top-6 right-6 z-50 flex items-start gap-3 px-6 py-4 rounded-2xl shadow-2xl border transition-all animate-in fade-in slide-in-from-top-4 duration-300 max-w-md ${
+          toast.type === 'error' ? 'bg-red-500/10 border-red-500/20 text-red-400 backdrop-blur-md' : 
+          toast.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 backdrop-blur-md' : 
+          'bg-amber-500/10 border-amber-500/20 text-amber-400 backdrop-blur-md'
+        }`}>
+          <div className="mt-0.5">
+            {toast.type === 'error' && <XCircle className="w-5 h-5" />}
+            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5" />}
+            {toast.type === 'warning' && <AlertTriangle className="w-5 h-5" />}
+          </div>
+          <span className="font-medium text-sm flex-1 whitespace-pre-wrap">{toast.message}</span>
+          <button onClick={() => setToast(null)} className="ml-2 opacity-50 hover:opacity-100 transition-opacity">
+            <XCircle className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8">
         
         {/* Header Nova Campanha */}
