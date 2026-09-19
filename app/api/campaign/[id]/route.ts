@@ -35,6 +35,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
     return NextResponse.json({ 
       campaign: {
+        ...campaign,
         status: campaign.status,
         total,
         sent,
@@ -57,6 +58,35 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       data: { status: 'paused' }
     });
     return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function PUT(req: Request, { params }: { params: { id: string } }) {
+  try {
+    const body = await req.json();
+    const { name, scheduledAt, messageTemplate, delayMin, delayMax, batchSize, batchPause } = body;
+
+    let scheduleDate = null;
+    if (scheduledAt) {
+      scheduleDate = new Date(scheduledAt);
+    }
+
+    const campaign = await prisma.campaign.update({
+      where: { id: params.id },
+      data: {
+        name,
+        messageTemplate,
+        scheduledAt: scheduleDate,
+        delayMin: Number(delayMin),
+        delayMax: Number(delayMax),
+        batchSize: Number(batchSize),
+        batchPause: Number(batchPause)
+      } as any
+    });
+
+    return NextResponse.json({ success: true, campaign });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

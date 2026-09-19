@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { PlusCircle, Activity, Calendar, CheckCircle2, Clock, PlayCircle } from 'lucide-react';
 
 interface Campaign {
@@ -16,6 +17,7 @@ interface Campaign {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -137,7 +139,11 @@ export default function DashboardPage() {
               </thead>
               <tbody className="divide-y divide-zinc-800/40">
                 {campaigns.map((camp) => (
-                  <tr key={camp.id} className="hover:bg-zinc-800/30 transition-colors">
+                  <tr 
+                    key={camp.id} 
+                    onClick={() => router.push(`/disparador/campanha/${camp.id}`)}
+                    className="hover:bg-zinc-800/30 transition-colors cursor-pointer"
+                  >
                     <td className="px-6 py-4">
                       <p className="font-bold text-zinc-200">{camp.name}</p>
                       <p className="text-xs font-mono text-zinc-600 mt-1">ID: {camp.id.substring(0, 8)}</p>
