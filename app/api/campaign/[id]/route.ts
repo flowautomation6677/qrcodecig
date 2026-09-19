@@ -28,7 +28,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     const total = campaign.contacts.length;
     const sent = campaign.contacts.filter(c => c.status === 'sent').length;
     const failed = campaign.contacts.filter(c => c.status === 'failed').length;
-    const pending = campaign.contacts.filter(c => c.status === 'pending').length;
+    // pending = total - sent - failed (calculado implicitamente)
     
     // Calcula o progresso / currentContactIndex com base nos não-pendentes
     const currentContactIndex = sent + failed;
