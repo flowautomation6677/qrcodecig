@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft, CheckCircle2, Clock, PlayCircle, XCircle, 
-  Save, AlertTriangle, Users, Calendar, Settings 
+  Save, AlertTriangle, Users, Calendar, Settings, Trash2, PauseCircle 
 } from 'lucide-react';
 
 export default function CampanhaDetailsPage({ params }: { params: { id: string } }) {
@@ -103,6 +103,43 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
     setSaving(false);
   };
 
+  const handlePause = async () => {
+    try {
+      const res = await fetch(`/api/campaign/${params.id}/pause`, { method: 'POST' });
+      if (res.ok) {
+        showToast('Campanha pausada!', 'success');
+        fetchCampaign(false);
+      } else showToast('Erro ao pausar', 'error');
+    } catch {
+      showToast('Erro na requisição', 'error');
+    }
+  };
+
+  const handleResume = async () => {
+    try {
+      const res = await fetch(`/api/campaign/${params.id}/resume`, { method: 'POST' });
+      if (res.ok) {
+        showToast('Campanha retomada!', 'success');
+        fetchCampaign(false);
+      } else showToast('Erro ao retomar', 'error');
+    } catch {
+      showToast('Erro na requisição', 'error');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm('Tem certeza que deseja excluir esta campanha?')) return;
+    try {
+      const res = await fetch(`/api/campaign/${params.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showToast('Campanha excluída!', 'success');
+        router.push('/disparador');
+      } else showToast('Erro ao excluir', 'error');
+    } catch {
+      showToast('Erro na requisição', 'error');
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-8 max-w-6xl mx-auto flex justify-center mt-20">
@@ -154,16 +191,46 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
             <p className="text-sm text-zinc-500 mt-1">Modo: <span className="uppercase text-zinc-300 font-bold">{campaign.messageMode}</span></p>
           </div>
         </div>
-        {isEditable && (
+        <div className="flex items-center gap-3">
+          {(campaign.status === 'running' || campaign.status === 'scheduled' || campaign.status === 'pending') && (
+            <button 
+              onClick={handlePause}
+              className="flex items-center gap-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 px-4 py-2.5 rounded-xl font-bold transition-all text-sm"
+            >
+              <PauseCircle className="w-4 h-4" />
+              Pausar
+            </button>
+          )}
+
+          {campaign.status === 'paused' && (
+            <button 
+              onClick={handleResume}
+              className="flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 px-4 py-2.5 rounded-xl font-bold transition-all text-sm"
+            >
+              <PlayCircle className="w-4 h-4" />
+              Retomar
+            </button>
+          )}
+
+          {isEditable && (
+            <button 
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black px-6 py-2.5 rounded-xl font-bold transition-all disabled:opacity-50 text-sm"
+            >
+              <Save className="w-4 h-4" />
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+          )}
+
           <button 
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black px-6 py-2.5 rounded-xl font-bold transition-all disabled:opacity-50"
+            onClick={handleDelete}
+            className="flex items-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-4 py-2.5 rounded-xl font-bold transition-all text-sm"
           >
-            <Save className="w-4 h-4" />
-            {saving ? 'Salvando...' : 'Salvar Alterações'}
+            <Trash2 className="w-4 h-4" />
+            Excluir
           </button>
-        )}
+        </div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">

@@ -524,7 +524,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
 
   const pauseCampaign = async () => {
     if (campaignId) {
-      await fetch(`/api/campaign/${campaignId}`, { method: 'DELETE' });
+      await fetch(`/api/campaign/${campaignId}/pause`, { method: 'POST' });
     }
     campaignRef.current = { ...campaignRef.current, status: 'paused' };
     setCampaign(campaignRef.current);
@@ -532,10 +532,12 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
   
   const stopCampaign = async () => {
     if (campaignId) {
+      // Deleting stops it completely and removes it
       await fetch(`/api/campaign/${campaignId}`, { method: 'DELETE' });
     }
     campaignRef.current = { ...campaignRef.current, status: 'idle', currentContactIndex: 0, sent: 0, failed: 0 };
     setCampaign(campaignRef.current);
+    setCampaignId(null);
   };
 
   return (

@@ -52,10 +52,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   try {
-    // Para a campanha se estiver rodando
-    await prisma.campaign.update({
-      where: { id: params.id },
-      data: { status: 'paused' }
+    await prisma.campaign.delete({
+      where: { id: params.id }
     });
     return NextResponse.json({ success: true });
   } catch (error: any) {
