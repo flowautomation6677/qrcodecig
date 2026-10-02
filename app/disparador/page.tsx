@@ -19,6 +19,7 @@ interface Campaign {
 export default function DashboardPage() {
   const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [stats, setStats] = useState({ total: 0, completed: 0, running: 0, scheduled: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,6 +28,16 @@ export default function DashboardPage() {
       .then(data => {
         if (data.campaigns) {
           setCampaigns(data.campaigns);
+        }
+        if (data.stats) {
+          setStats(data.stats);
+        } else if (data.campaigns) {
+          setStats({
+            total: data.campaigns.length,
+            completed: data.campaigns.filter((c: any) => c.status === 'completed').length,
+            running: data.campaigns.filter((c: any) => c.status === 'running').length,
+            scheduled: data.campaigns.filter((c: any) => c.status === 'scheduled').length
+          });
         }
         setLoading(false);
       })
@@ -61,7 +72,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-xs text-zinc-500 uppercase font-bold mb-1">Total de Campanhas</p>
-              <p className="text-3xl font-light text-white">{campaigns.length}</p>
+              <p className="text-3xl font-light text-white">{stats.total}</p>
             </div>
           </div>
         </div>
@@ -73,7 +84,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-xs text-zinc-500 uppercase font-bold mb-1">Concluídas</p>
-              <p className="text-3xl font-light text-white">{campaigns.filter(c => c.status === 'completed').length}</p>
+              <p className="text-3xl font-light text-white">{stats.completed}</p>
             </div>
           </div>
         </div>
@@ -85,7 +96,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-xs text-zinc-500 uppercase font-bold mb-1">Em Andamento</p>
-              <p className="text-3xl font-light text-white">{campaigns.filter(c => c.status === 'running').length}</p>
+              <p className="text-3xl font-light text-white">{stats.running}</p>
             </div>
           </div>
         </div>
@@ -97,7 +108,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-xs text-zinc-500 uppercase font-bold mb-1">Agendadas</p>
-              <p className="text-3xl font-light text-white">{campaigns.filter(c => c.status === 'scheduled').length}</p>
+              <p className="text-3xl font-light text-white">{stats.scheduled}</p>
             </div>
           </div>
         </div>

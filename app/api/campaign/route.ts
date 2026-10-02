@@ -6,7 +6,24 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    const statusCounts = await prisma.campaign.groupBy({
+      by: ['status'],
+      _count: {
+        id: true
+      }
+    });
+
+    const total = await prisma.campaign.count();
+
+    const stats = {
+      total,
+      completed: statusCounts.find(s => s.status === 'completed')?._count.id || 0,
+      running: statusCounts.find(s => s.status === 'running')?._count.id || 0,
+      scheduled: statusCounts.find(s => s.status === 'scheduled')?._count.id || 0,
+    };
+
     const campaigns = await prisma.campaign.findMany({
+      take: 20,
       orderBy: { createdAt: 'desc' },
       include: {
         _count: {
@@ -15,12 +32,7 @@ export async function GET() {
       }
     });
 
-    // Count sent and failed using raw or separate queries, 
-    // but Prisma makes it easier with a mapping or we can fetch contacts if needed.
-    // To keep it light, we can fetch the contacts for stats, or just use the count.
-    
-    // For Dashboard, we just return the campaigns.
-    return NextResponse.json({ campaigns });
+    return NextResponse.json({ campaigns, stats });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
