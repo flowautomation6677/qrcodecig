@@ -25,7 +25,12 @@ export async function GET() {
     const campaigns = await prisma.campaign.findMany({
       take: 20,
       orderBy: { createdAt: 'desc' },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        scheduledAt: true,
+        createdAt: true,
         _count: {
           select: { contacts: true }
         }
