@@ -4,37 +4,55 @@ import { campaignQueue } from '@/src/lib/queue';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const clientId = searchParams.get('clientId');
+
+    const whereClause = clientId ? { clientId } : {};
+
     const statusCounts = await prisma.campaign.groupBy({
       by: ['status'],
+      where: whereClause,
       _count: {
-        id: true
-      }
+        id: true,
+      },
     });
 
-    const total = await prisma.campaign.count();
+    const total = await prisma.campaign.count({
+      where: whereClause,
+    });
 
     const stats = {
       total,
-      completed: statusCounts.find(s => s.status === 'completed')?._count.id || 0,
-      running: statusCounts.find(s => s.status === 'running')?._count.id || 0,
-      scheduled: statusCounts.find(s => s.status === 'scheduled')?._count.id || 0,
+      completed: statusCounts.find((s) => s.status === 'completed')?._count.id || 0,
+      running: statusCounts.find((s) => s.status === 'running')?._count.id || 0,
+      scheduled: statusCounts.find((s) => s.status === 'scheduled')?._count.id || 0,
     };
 
     const campaigns = await prisma.campaign.findMany({
-      take: 20,
+      where: whereClause,
+      take: 50,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
         name: true,
         status: true,
+        instanceName: true,
         scheduledAt: true,
         createdAt: true,
+        clientId: true,
+        client: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        },
         _count: {
-          select: { contacts: true }
-        }
-      }
+          select: { contacts: true },
+        },
+      },
     });
 
     return NextResponse.json({ campaigns, stats });
@@ -48,6 +66,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const {
       name,
+      clientId,
       instanceName,
       messageMode,
       messageTemplate,
@@ -60,7 +79,7 @@ export async function POST(req: Request) {
       batchSize,
       batchPause,
       contacts,
-      scheduledAt
+      scheduledAt,
     } = body;
 
     if (!instanceName || !contacts || contacts.length === 0) {
@@ -70,7 +89,7 @@ export async function POST(req: Request) {
     // Calcular data de agendamento (se houver)
     let scheduleDate = null;
     let delayMs = 0;
-    
+
     if (scheduledAt) {
       scheduleDate = new Date(scheduledAt);
       const now = new Date();
@@ -84,6 +103,7 @@ export async function POST(req: Request) {
     const campaign = await prisma.campaign.create({
       data: {
         name: name || 'Nova Campanha',
+        clientId: clientId || null,
         instanceName,
         messageMode,
         messageTemplate,
@@ -100,27 +120,25 @@ export async function POST(req: Request) {
         contacts: {
           create: contacts.map((c: any) => ({
             number: c.number,
-            name: c.name || null
-          }))
-        }
-      }
+            name: c.name || null,
+          })),
+        },
+      },
     });
 
     // 2. Enfileirar o Job no BullMQ
-    // Se tiver scheduledAt, adicionamos o delay. Caso contrário, entra na fila imediatamente.
     await campaignQueue.add(
       'start-campaign',
       { campaignId: campaign.id },
       { delay: delayMs }
     );
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       campaignId: campaign.id,
       status,
-      message: status === 'scheduled' ? 'Campanha agendada com sucesso' : 'Campanha iniciada'
+      message: status === 'scheduled' ? 'Campanha agendada com sucesso' : 'Campanha iniciada',
     });
-
   } catch (error: any) {
     console.error('Erro ao criar campanha:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

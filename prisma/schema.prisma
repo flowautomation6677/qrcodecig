@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,8 +9,35 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id        String     @id @default(uuid())
+  name      String
+  email     String     @unique
+  password  String
+  createdAt DateTime   @default(now())
+  
+  campaigns Campaign[]
+}
+
+model Client {
+  id           String     @id @default(uuid())
+  name         String
+  slug         String     @unique
+  instanceName String     @unique
+  phoneNumber  String?
+  status       String     @default("disconnected") // connected, disconnected, connecting
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  campaigns    Campaign[]
+}
+
 model Campaign {
   id              String    @id @default(uuid())
+  clientId        String?
+  client          Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  userId          String?
+  user            User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name            String    @default("Nova Campanha")
   instanceName    String
   messageMode     String    @default("text") // text, image, audio, video

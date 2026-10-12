@@ -2,14 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, PlusCircle, Smartphone, LogOut } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, Smartphone, Users, QrCode } from 'lucide-react';
 
 export default function Sidebar({ instanceName }: { instanceName: string }) {
   const pathname = usePathname();
 
   const menuItems = [
-    { name: 'Dashboard', href: '/disparador', icon: LayoutDashboard },
+    { name: 'Escolher Cliente', href: '/disparador/clientes', icon: Users },
     { name: 'Nova Campanha', href: '/disparador/novo', icon: PlusCircle },
+    { name: 'Painel Geral', href: '/disparador', icon: LayoutDashboard },
   ];
 
   return (
@@ -17,21 +18,27 @@ export default function Sidebar({ instanceName }: { instanceName: string }) {
       <div className="p-6">
         <h1 className="text-xl font-bold text-white flex items-center gap-2">
           <Smartphone className="w-6 h-6 text-emerald-500" />
-          NEXUS
+          DISPARADOR
         </h1>
-        <p className="text-xs text-zinc-500 mt-1">Gerenciador de Campanhas</p>
+        <p className="text-xs text-zinc-500 mt-1">Gestão de Disparos WhatsApp</p>
       </div>
 
       <div className="px-4 mb-6">
-        <div className="bg-zinc-900 rounded-xl p-3 border border-zinc-800">
-          <p className="text-[10px] uppercase font-bold text-zinc-500 mb-1">Instância Conectada</p>
+        <Link
+          href="/disparador/clientes"
+          className="block bg-zinc-900 hover:bg-zinc-800/80 rounded-xl p-3 border border-zinc-800 transition-colors group"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] uppercase font-bold text-zinc-500">Gestão Multicliente</p>
+            <span className="text-[10px] text-emerald-400 group-hover:underline">Gerenciar &rarr;</span>
+          </div>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
-            <p className="text-sm font-medium text-emerald-400 truncate" title={instanceName}>
-              {instanceName || 'Não conectada'}
+            <p className="text-xs font-medium text-emerald-400 truncate" title={instanceName}>
+              {instanceName || 'Instância Ativa'}
             </p>
           </div>
-        </div>
+        </Link>
       </div>
 
       <nav className="flex-1 px-4 space-y-2">
@@ -55,13 +62,13 @@ export default function Sidebar({ instanceName }: { instanceName: string }) {
         })}
       </nav>
 
-      <div className="p-4 border-t border-zinc-800">
+      <div className="p-4 border-t border-zinc-800 space-y-2">
         <Link
-          href="/"
-          className="flex items-center gap-3 px-4 py-3 rounded-xl text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-all font-medium text-sm"
+          href="/disparador/clientes"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors"
         >
-          <LogOut className="w-5 h-5" />
-          Desconectar
+          <QrCode className="w-4 h-4 text-emerald-400" />
+          <span>Links de QR Code</span>
         </Link>
       </div>
     </aside>

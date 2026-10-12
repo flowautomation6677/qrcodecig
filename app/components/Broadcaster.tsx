@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import Papa from 'papaparse';
 import { 
   CheckCircle2, XCircle, MessageSquare, Image as ImageIcon, 
   Mic, MicOff, Trash2, Volume2, FileAudio, Link as LinkIcon,
-  Check, Video, Play, Pause, Square, Upload, AlertTriangle
+  Check, Video, Play, Pause, Square, Upload, AlertTriangle, Users
 } from 'lucide-react';
 
 interface Contact {
@@ -61,6 +63,44 @@ const injectVariables = (text: string, contact: Contact) => {
 };
 
 export default function Broadcaster({ instanceName }: Readonly<{ instanceName: string }>) {
+  const searchParams = useSearchParams();
+  const queryClientId = searchParams?.get('clientId') || null;
+
+  const [clientsList, setClientsList] = useState<any[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<string>(queryClientId || '');
+  const [activeInstance, setActiveInstance] = useState<string>(instanceName);
+
+  useEffect(() => {
+    fetch('/api/clients')
+      .then(res => res.json())
+      .then(data => {
+        if (data.clients && data.clients.length > 0) {
+          setClientsList(data.clients);
+          if (queryClientId) {
+            const found = data.clients.find((c: any) => c.id === queryClientId);
+            if (found) {
+              setSelectedClientId(found.id);
+              setActiveInstance(found.instanceName);
+              return;
+            }
+          }
+          if (!activeInstance && data.clients[0]) {
+            setSelectedClientId(data.clients[0].id);
+            setActiveInstance(data.clients[0].instanceName);
+          }
+        }
+      })
+      .catch(err => console.error('Erro ao carregar clientes:', err));
+  }, [queryClientId]);
+
+  const handleClientChange = (clientId: string) => {
+    setSelectedClientId(clientId);
+    const client = clientsList.find((c: any) => c.id === clientId);
+    if (client) {
+      setActiveInstance(client.instanceName);
+    }
+  };
+
   // Campaign Name
   const [campaignName, setCampaignName] = useState('Campanha ' + new Date().toLocaleDateString('pt-BR'));
 
@@ -346,7 +386,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
       const checkRes = await fetch('/api/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'check', number, instance: instanceName })
+        body: JSON.stringify({ action: 'check', number, instance: activeInstance })
       });
       const checkData = await checkRes.json();
       if (!checkData.exists) {
@@ -378,7 +418,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
       body: JSON.stringify({ 
         action: 'presence', 
         number: contact.number, 
-        instance: instanceName, 
+        instance: activeInstance, 
         delay: typingDelay,
         mediaType: isAudio ? 'audio' : 'text'
       })
@@ -399,7 +439,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
             action: 'sendText', 
             number: contact.number, 
             message: text, 
-            instance: instanceName 
+            instance: activeInstance 
           })
         });
       } else if (messageMode === 'image') {
@@ -415,7 +455,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
             mediaUrl: imageInputMethod === 'url' ? imageUrl : undefined,
             fileName: imageFileName || 'imagem.jpg',
             caption: text,
-            instance: instanceName 
+            instance: activeInstance 
           })
         });
       } else {
@@ -431,7 +471,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
             fileName: audioFileName || 'audio.ogg',
             isPtt: isPtt,
             caption: text,
-            instance: instanceName 
+            instance: activeInstance 
           })
         });
       }
@@ -492,7 +532,8 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: campaignName,
-          instanceName,
+          clientId: selectedClientId || undefined,
+          instanceName: activeInstance,
           messageMode,
           messageTemplate,
           mediaBase64: messageMode === 'image' && imageInputMethod === 'upload' ? imageBase64 : (messageMode === 'audio' && audioInputMethod !== 'url' ? audioBase64 : (messageMode === 'video' && videoInputMethod === 'upload' ? videoBase64 : undefined)),
@@ -578,7 +619,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                 <span className="text-[10px] uppercase font-bold text-zinc-500">Instância Conectada</span>
                 <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-400">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
-                  {instanceName || 'Não conectada'}
+                  {activeInstance || 'Não conectada'}
                 </span>
              </div>
           </div>
@@ -597,6 +638,38 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
               </h2>
               
               <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-zinc-400">Cliente / Remetente *</label>
+                    <Link href="/disparador/clientes" className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1">
+                      <Users className="w-3 h-3" /> Gerenciar Clientes
+                    </Link>
+                  </div>
+                  <select
+                    value={selectedClientId}
+                    onChange={(e) => handleClientChange(e.target.value)}
+                    className="w-full bg-black/50 border border-zinc-700/50 rounded-xl p-3 text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all cursor-pointer"
+                  >
+                    <option value="">Selecione o Cliente</option>
+                    {clientsList.map((c) => (
+                      <option key={c.id} value={c.id} className="bg-zinc-900 text-white">
+                        {c.name} {c.status === 'connected' ? '🟢 Conectado' : '🔴 Desconectado'} ({c.instanceName})
+                      </option>
+                    ))}
+                  </select>
+                  {selectedClientId && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between text-xs text-emerald-300 animate-fade-in">
+                      <span className="flex items-center gap-1.5 font-medium">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        Disparando via chip de: <strong>{clientsList.find((c) => c.id === selectedClientId)?.name}</strong>
+                      </span>
+                      <span className="font-mono text-[11px] text-emerald-400/80 bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-800/40">
+                        {clientsList.find((c) => c.id === selectedClientId)?.instanceName}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <label className="text-xs font-semibold text-zinc-400 block mb-2">Nome da Campanha</label>
                   <input 
