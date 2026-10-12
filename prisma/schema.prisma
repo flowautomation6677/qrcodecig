@@ -9,16 +9,6 @@ datasource db {
   provider = "postgresql"
 }
 
-model User {
-  id        String     @id @default(uuid())
-  name      String
-  email     String     @unique
-  password  String
-  createdAt DateTime   @default(now())
-  
-  campaigns Campaign[]
-}
-
 model Client {
   id           String     @id @default(uuid())
   name         String
@@ -36,8 +26,6 @@ model Campaign {
   id              String    @id @default(uuid())
   clientId        String?
   client          Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  userId          String?
-  user            User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name            String    @default("Nova Campanha")
   instanceName    String
   messageMode     String    @default("text") // text, image, audio, video

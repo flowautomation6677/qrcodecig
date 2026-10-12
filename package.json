@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "npm run worker & next start -H 0.0.0.0 -p 3000",
+    "start": "npx prisma db push --skip-generate && npm run worker & next start -H 0.0.0.0 -p 3000",
+    "db:push": "prisma db push",
     "lint": "next lint",
     "worker": "tsx src/lib/worker.ts"
   },
