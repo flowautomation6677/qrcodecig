@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/src/lib/prisma';
+import { prisma, ensureDatabaseSchema } from '@/src/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +16,7 @@ function slugify(text: string) {
 
 // GET /api/clients - Lista todos os clientes e atualiza o status de conexão ao vivo
 export async function GET() {
+  await ensureDatabaseSchema();
   const defaultInstance = process.env.EVOLUTION_INSTANCE_NAME || 'cigarroeletronico-atendimento';
   const defaultClientFallback = {
     id: 'cigarro-eletronico-default',
@@ -145,6 +146,7 @@ export async function GET() {
 // POST /api/clients - Cadastra novo cliente e cria a instância na Evolution API se necessário
 export async function POST(req: Request) {
   try {
+    await ensureDatabaseSchema();
     const body = await req.json();
     const { name, slug: customSlug, instanceName: customInstance } = body;
 
