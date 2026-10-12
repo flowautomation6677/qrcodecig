@@ -17,7 +17,7 @@ function slugify(text: string) {
 // GET /api/clients - Lista todos os clientes e atualiza o status de conexão ao vivo
 export async function GET() {
   try {
-    const clients = await prisma.client.findMany({
+    let clients = await prisma.client.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
         _count: {
@@ -25,6 +25,38 @@ export async function GET() {
         },
       },
     });
+
+    // Se nenhum cliente existir ainda, auto-cadastra o cliente existente ("Cigarro Eletrônico")
+    if (clients.length === 0) {
+      const defaultInstance = process.env.EVOLUTION_INSTANCE_NAME || 'cigarroeletronico-atendimento';
+      try {
+        const defaultClient = await prisma.client.create({
+          data: {
+            name: 'Cigarro Eletrônico',
+            slug: 'cigarro-eletronico',
+            instanceName: defaultInstance,
+            status: 'connected',
+          },
+        });
+
+        // Vincula as campanhas antigas a este cliente inicial
+        await prisma.campaign.updateMany({
+          where: { clientId: null },
+          data: { clientId: defaultClient.id },
+        });
+
+        clients = await prisma.client.findMany({
+          orderBy: { createdAt: 'desc' },
+          include: {
+            _count: {
+              select: { campaigns: true },
+            },
+          },
+        });
+      } catch (seedErr) {
+        console.warn('Aviso: Não foi possível auto-cadastrar cliente padrão:', seedErr);
+      }
+    }
 
     const apiUrl = process.env.EVOLUTION_API_URL?.replace(/\/$/, '');
     const apiKey = process.env.EVOLUTION_API_KEY;
