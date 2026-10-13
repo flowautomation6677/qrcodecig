@@ -152,13 +152,13 @@ export default function ClientsPage() {
 
       if (qrData.base64) {
         setQrCode(qrData.base64);
-        setCountdown(10);
+        setCountdown(45);
       } else if (qrData.qrcode?.base64) {
         setQrCode(qrData.qrcode.base64);
-        setCountdown(10);
+        setCountdown(45);
       } else if (qrData.code) {
         setQrCode(qrData.code);
-        setCountdown(10);
+        setCountdown(45);
       } else if (qrData.error) {
         setQrError(qrData.error || 'Erro ao gerar o QR Code.');
       }
@@ -168,6 +168,22 @@ export default function ClientsPage() {
       setLoadingQr(false);
     }
   }, []);
+
+  // Reinicia a instância e limpa sessões presas no Baileys/Evolution API
+  const handleResetQr = async (instanceName: string) => {
+    setLoadingQr(true);
+    setQrError(null);
+    try {
+      await fetch('/api/whatsapp/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instance: instanceName }),
+      });
+      await fetchClientQrCode(instanceName);
+    } catch {
+      fetchClientQrCode(instanceName);
+    }
+  };
 
   // Gerencia ciclo de vida do Modal do QR Code
   useEffect(() => {
@@ -179,6 +195,7 @@ export default function ClientsPage() {
     setIsQrConnected(qrModalClient.status === 'connected');
     setLoadingQr(true);
     setQrError(null);
+    setCountdown(45);
 
     checkQrStatus(instanceName, clientId);
     fetchClientQrCode(instanceName);
@@ -187,12 +204,13 @@ export default function ClientsPage() {
       checkQrStatus(instanceName, clientId);
     }, 3000);
 
+    // Renovação a cada 45s (tempo seguro para o WhatsApp validar sem rejeitar a chave)
     qrIntervalRef.current = setInterval(() => {
       fetchClientQrCode(instanceName);
-    }, 10000);
+    }, 45000);
 
     countdownIntervalRef.current = setInterval(() => {
-      setCountdown((prev) => (prev <= 1 ? 10 : prev - 1));
+      setCountdown((prev) => (prev <= 1 ? 45 : prev - 1));
     }, 1000);
 
     return () => {
@@ -702,6 +720,27 @@ export default function ClientsPage() {
                     >
                       <ExternalLink className="w-4 h-4" />
                     </a>
+                  </div>
+                </div>
+
+                {/* Botão de Reset e Dicas Anti-Erro */}
+                <div className="w-full mt-3 space-y-2.5">
+                  <button
+                    onClick={() => handleResetQr(qrModalClient.instanceName)}
+                    disabled={loadingQr}
+                    className="w-full py-2.5 px-3 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all border border-zinc-700/60 disabled:opacity-50"
+                    title="Limpa qualquer sessão presa no Baileys e gera um QR Code novo"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 text-emerald-400 ${loadingQr ? 'animate-spin' : ''}`} />
+                    <span>Gerar Novo QR Code / Reiniciar Sessão</span>
+                  </button>
+
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-300/90 space-y-1">
+                    <p className="font-bold flex items-center gap-1 text-amber-300">
+                      ⚠️ Deu &quot;Não foi possível conectar o dispositivo&quot; no celular?
+                    </p>
+                    <p>1. Verifique se o WhatsApp já atingiu o limite de <strong>4 aparelhos conectados</strong> (desconecte computadores antigos).</p>
+                    <p>2. Clique no botão acima para <strong>Reiniciar Sessão</strong> e aponte a câmera com o novo código.</p>
                   </div>
                 </div>
               </div>

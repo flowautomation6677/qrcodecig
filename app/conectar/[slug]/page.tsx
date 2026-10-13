@@ -103,13 +103,13 @@ export default function ClientConnectPage() {
 
       if (qrData.base64) {
         setQrCode(qrData.base64);
-        setCountdown(10);
+        setCountdown(45);
       } else if (qrData.qrcode?.base64) {
         setQrCode(qrData.qrcode.base64);
-        setCountdown(10);
+        setCountdown(45);
       } else if (qrData.code) {
         setQrCode(qrData.code);
-        setCountdown(10);
+        setCountdown(45);
       } else if (qrData.error) {
         setErrorMessage(qrData.error || 'Erro ao obter o QR Code.');
       }
@@ -120,6 +120,23 @@ export default function ClientConnectPage() {
     }
   }, [instanceName, isConnected]);
 
+  // Função para reiniciar e limpar sessão travada
+  const handleReset = async () => {
+    if (!instanceName) return;
+    setLoadingQr(true);
+    setErrorMessage(null);
+    try {
+      await fetch('/api/whatsapp/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instance: instanceName }),
+      });
+      await fetchQRCode();
+    } catch {
+      fetchQRCode();
+    }
+  };
+
   // 4. Polling e Ciclos de Renovação
   useEffect(() => {
     if (!instanceName || isConnected) return;
@@ -128,15 +145,15 @@ export default function ClientConnectPage() {
     checkStatus();
     fetchQRCode();
 
-    // Polling de status a cada 3s
+    // Polling de status a cada 3s (leve, apenas checa se abriu)
     statusIntervalRef.current = setInterval(checkStatus, 3000);
 
-    // Renovação do QR a cada 10s
-    qrIntervalRef.current = setInterval(fetchQRCode, 10000);
+    // Renovação do QR a cada 45s (tempo seguro para evitar rejeição do WhatsApp)
+    qrIntervalRef.current = setInterval(fetchQRCode, 45000);
 
     // Contagem regressiva visual
     countdownIntervalRef.current = setInterval(() => {
-      setCountdown((prev) => (prev <= 1 ? 10 : prev - 1));
+      setCountdown((prev) => (prev <= 1 ? 45 : prev - 1));
     }, 1000);
 
     return () => {
@@ -294,6 +311,27 @@ export default function ClientConnectPage() {
                     4
                   </span>
                   <span>Aponte a câmera para o QR Code acima</span>
+                </div>
+              </div>
+
+              {/* Botão de Reset e Dicas Anti-Erro */}
+              <div className="w-full mt-4 space-y-3">
+                <button
+                  onClick={handleReset}
+                  disabled={loadingQr}
+                  className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700/80 text-slate-300 hover:text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all border border-slate-700/60 disabled:opacity-50"
+                  title="Limpa qualquer sessão travada e gera um QR Code novo"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-emerald-400 ${loadingQr ? 'animate-spin' : ''}`} />
+                  <span>Gerar Novo QR Code / Reiniciar Sessão</span>
+                </button>
+
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-300/90 space-y-1">
+                  <p className="font-bold flex items-center gap-1 text-amber-300">
+                    ⚠️ Deu &quot;Não foi possível conectar o dispositivo&quot;?
+                  </p>
+                  <p>1. Verifique se o seu WhatsApp já possui <strong>4 aparelhos conectados</strong> (desconecte computadores antigos).</p>
+                  <p>2. Clique no botão acima para <strong>Reiniciar Sessão</strong> e aponte a câmera com o novo código.</p>
                 </div>
               </div>
             </div>
