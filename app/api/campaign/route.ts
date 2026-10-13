@@ -130,7 +130,12 @@ export async function POST(req: Request) {
     await campaignQueue.add(
       'start-campaign',
       { campaignId: campaign.id },
-      { delay: delayMs }
+      {
+        delay: delayMs,
+        jobId: `campaign-${campaign.id}`,
+        removeOnComplete: true,
+        removeOnFail: true,
+      }
     );
 
     return NextResponse.json({

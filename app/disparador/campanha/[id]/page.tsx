@@ -23,6 +23,7 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
   const [batchPause, setBatchPause] = useState(10);
   
   const [saving, setSaving] = useState(false);
+  const [dispatching, setDispatching] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'success'|'error'} | null>(null);
 
   const showToast = (message: string, type: 'success'|'error') => {
@@ -127,6 +128,25 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
     }
   };
 
+  const handleDispatchNow = async () => {
+    if (!confirm('Deseja iniciar o disparo desta campanha agora mesmo?')) return;
+    setDispatching(true);
+    try {
+      const res = await fetch(`/api/campaign/${params.id}/dispatch-now`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Disparo iniciado!', 'success');
+        fetchCampaign(false);
+      } else {
+        showToast(data.error || 'Erro ao iniciar disparo', 'error');
+      }
+    } catch {
+      showToast('Erro na requisição', 'error');
+    } finally {
+      setDispatching(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!confirm('Tem certeza que deseja excluir esta campanha?')) return;
     try {
@@ -199,6 +219,17 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
             >
               <PauseCircle className="w-4 h-4" />
               Pausar
+            </button>
+          )}
+
+          {(campaign.status === 'pending' || campaign.status === 'scheduled' || campaign.status === 'paused') && (
+            <button 
+              onClick={handleDispatchNow}
+              disabled={dispatching}
+              className="flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 px-4 py-2.5 rounded-xl font-bold transition-all text-sm disabled:opacity-50"
+            >
+              <PlayCircle className="w-4 h-4" />
+              {dispatching ? 'Iniciando...' : 'Disparar Agora'}
             </button>
           )}
 

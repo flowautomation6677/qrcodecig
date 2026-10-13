@@ -7,4 +7,12 @@ const connection = new IORedis(process.env.REDIS_URL || 'redis://127.0.0.1:6379'
   maxRetriesPerRequest: null,
 });
 
+connection.on('error', (err) => {
+  console.warn('[Queue Redis] Aviso de conexão com Redis:', err?.message);
+});
+
 export const campaignQueue = new Queue('campaign-queue', { connection });
+
+campaignQueue.on('error', (err) => {
+  console.warn('[Queue BullMQ] Aviso na fila:', err?.message);
+});
