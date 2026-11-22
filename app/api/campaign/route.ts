@@ -50,6 +50,8 @@ export async function GET(request: Request) {
         currentSlotCount: true,
         todayCount: true,
         dailyLimit: true,
+        provider: true,
+        metaTemplateName: true,
         createdAt: true,
         clientId: true,
         client: {
@@ -101,6 +103,11 @@ export async function POST(req: Request) {
       keepTitles,
       dedupDays,
       allowedDdds,
+      // Provedor Meta Oficial
+      provider,
+      metaTemplateName,
+      metaTemplateLanguage,
+      metaTemplateComponents,
     } = body;
 
     if (!instanceName || !contacts || contacts.length === 0) {
@@ -143,6 +150,10 @@ export async function POST(req: Request) {
         keepTitles: keepTitles !== undefined ? Boolean(keepTitles) : false,
         dedupDays: Number(dedupDays) || 30,
         allowedDdds: allowedDdds || null,
+        provider: provider || 'evolution',
+        metaTemplateName: metaTemplateName || null,
+        metaTemplateLanguage: metaTemplateLanguage || 'pt_BR',
+        metaTemplateComponents: typeof metaTemplateComponents === 'string' ? metaTemplateComponents : (metaTemplateComponents ? JSON.stringify(metaTemplateComponents) : null),
         scheduledAt: scheduleDate,
         nextDispatchAt,
         status: initialStatus,

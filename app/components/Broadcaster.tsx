@@ -41,6 +41,14 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
     campaignName: 'Campanha ' + new Date().toLocaleDateString('pt-BR'),
     selectedClientId: queryClientId || '',
     activeInstance: instanceName,
+    provider: 'evolution',
+
+    // Configs API Oficial da Meta
+    metaTemplateName: 'template_kelly',
+    metaTemplateLanguage: 'pt_BR',
+    metaTemplateComponents: [],
+    metaHeaderUrl: '',
+    metaHeaderType: 'video',
 
     sheetFile: null,
     fileName: '',
@@ -94,19 +102,30 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
           if (queryClientId) {
             const found = data.clients.find((c: any) => c.id === queryClientId);
             if (found) {
+              const isMeta = found.provider === 'meta_official';
               setFormData((prev) => ({
                 ...prev,
                 selectedClientId: found.id,
                 activeInstance: found.instanceName,
+                provider: isMeta ? 'meta_official' : 'evolution',
+                validateWhatsApp: isMeta ? false : prev.validateWhatsApp,
+                minDelaySec: isMeta ? 2 : prev.minDelaySec,
+                maxDelaySec: isMeta ? 5 : prev.maxDelaySec,
               }));
               return;
             }
           }
           if (!formData.activeInstance && data.clients[0]) {
+            const first = data.clients[0];
+            const isMeta = first.provider === 'meta_official';
             setFormData((prev) => ({
               ...prev,
-              selectedClientId: data.clients[0].id,
-              activeInstance: data.clients[0].instanceName,
+              selectedClientId: first.id,
+              activeInstance: first.instanceName,
+              provider: isMeta ? 'meta_official' : 'evolution',
+              validateWhatsApp: isMeta ? false : prev.validateWhatsApp,
+              minDelaySec: isMeta ? 2 : prev.minDelaySec,
+              maxDelaySec: isMeta ? 5 : prev.maxDelaySec,
             }));
           }
         }
@@ -116,10 +135,15 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
 
   const handleClientChange = (clientId: string) => {
     const client = clientsList.find((c) => c.id === clientId);
+    const isMeta = client?.provider === 'meta_official';
     setFormData((prev) => ({
       ...prev,
       selectedClientId: clientId,
       activeInstance: client ? client.instanceName : prev.activeInstance,
+      provider: isMeta ? 'meta_official' : 'evolution',
+      validateWhatsApp: isMeta ? false : prev.validateWhatsApp,
+      minDelaySec: isMeta ? 2 : prev.minDelaySec,
+      maxDelaySec: isMeta ? 5 : prev.maxDelaySec,
       summary: null, // força nova deduplicação pelo novo cliente
     }));
   };
@@ -159,6 +183,11 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
         stopGroupOnSuccess: formData.stopGroupOnSuccess,
         dedupDays: formData.dedupDays,
         allowedDdds: formData.allowedDdds || undefined,
+        // Parâmetros Meta Cloud API
+        provider: formData.provider,
+        metaTemplateName: formData.provider === 'meta_official' ? formData.metaTemplateName : undefined,
+        metaTemplateLanguage: formData.provider === 'meta_official' ? formData.metaTemplateLanguage : undefined,
+        metaTemplateComponents: formData.provider === 'meta_official' ? formData.metaTemplateComponents : undefined,
         scheduledAt: formData.isScheduled && formData.scheduledAt ? new Date(formData.scheduledAt).toISOString() : undefined,
         contacts: formData.sanitizedContacts.map((c) => ({
           number: c.normalizedPhone,
@@ -243,10 +272,15 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                 <option value="">Selecione o Cliente</option>
                 {clientsList.map((c) => (
                   <option key={c.id} value={c.id} className="bg-zinc-900 text-white">
-                    {c.name} ({c.instanceName})
+                    {c.provider === 'meta_official' ? '⚡ ' : '📱 '}{c.name}
                   </option>
                 ))}
               </select>
+              {formData.provider === 'meta_official' && (
+                <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                  Meta Oficial
+                </span>
+              )}
             </div>
 
             {/* Nome da Campanha */}

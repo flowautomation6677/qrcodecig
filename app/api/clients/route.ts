@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma, ensureDatabaseSchema } from '@/src/lib/prisma';
+import { testMetaCredentials } from '@/src/lib/providers/meta';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,17 @@ function slugify(text: string) {
     .replace(/^-+|-+$/g, ''); // remove traços no início e fim
 }
 
+const DEFAULT_KELLY = {
+  name: 'Kelly Veloso (Sônia Imóveis)',
+  slug: 'kelly-veloso',
+  instanceName: 'meta_kelly_veloso',
+  provider: 'meta_official',
+  metaPhoneNumberId: '849870041539834',
+  metaWabaId: '2671775253166341',
+  metaAccessToken: 'EAAq2T9ZBAJGQBS8IM9FSn1NR3w35MZAECqZBTD3O5bR9hk2aYZCQZCRf03dI49RGYoejAqPaSPUtAPlLYLu6uuDEi9m9lJ1F8VL7bZBkl7kZAg2NWeQWBwCI1Lhx19H2hHak7Oq9ep8Tm6dKSkZBFZCJZCd3XD86CzQRPq1qyPeVQeAZCJMYD93VjMNjasQzsryCAZDZD',
+  status: 'connected',
+};
+
 // GET /api/clients - Lista todos os clientes e atualiza o status de conexão ao vivo
 export async function GET() {
   await ensureDatabaseSchema();
@@ -23,6 +35,7 @@ export async function GET() {
     name: 'Cigarro Eletrônico',
     slug: 'cigarro-eletronico',
     instanceName: defaultInstance,
+    provider: 'evolution',
     status: 'connected',
     createdAt: new Date().toISOString(),
     _count: { campaigns: 0 },
@@ -40,7 +53,29 @@ export async function GET() {
       },
     });
 
-    // Se nenhum cliente existir no banco, tenta auto-cadastrar o cliente atual
+    // Auto-seed cliente Kelly se ainda não existir
+    const hasKelly = clients.some(
+      (c) => c.slug === 'kelly-veloso' || c.metaPhoneNumberId === DEFAULT_KELLY.metaPhoneNumberId
+    );
+    if (!hasKelly) {
+      try {
+        await prisma.client.create({
+          data: DEFAULT_KELLY,
+        });
+        clients = await prisma.client.findMany({
+          orderBy: { createdAt: 'desc' },
+          include: {
+            _count: {
+              select: { campaigns: true },
+            },
+          },
+        });
+      } catch (kellySeedErr) {
+        console.warn('Aviso ao auto-cadastrar cliente Kelly:', kellySeedErr);
+      }
+    }
+
+    // Se nenhum cliente existir no banco, tenta auto-cadastrar o cliente padrão
     if (clients.length === 0) {
       try {
         const defaultClient = await prisma.client.create({
@@ -48,6 +83,7 @@ export async function GET() {
             name: 'Cigarro Eletrônico',
             slug: 'cigarro-eletronico',
             instanceName: defaultInstance,
+            provider: 'evolution',
             status: 'connected',
           },
         });
@@ -87,9 +123,17 @@ export async function GET() {
     const apiUrl = process.env.EVOLUTION_API_URL?.replace(/\/$/, '');
     const apiKey = process.env.EVOLUTION_API_KEY;
 
-    // Consulta status de cada instância na Evolution em paralelo com timeout seguro
+    // Consulta status de cada instância na Evolution apenas para clientes 'evolution'
     const clientsWithStatus = await Promise.all(
       clients.map(async (client) => {
+        // Se for cliente da API Oficial da Meta, a conexão é perene e direta na nuvem
+        if (client.provider === 'meta_official') {
+          return {
+            ...client,
+            status: 'connected',
+          };
+        }
+
         let liveStatus = client.status;
 
         if (apiUrl && apiKey && client.instanceName) {
@@ -143,12 +187,20 @@ export async function GET() {
   }
 }
 
-// POST /api/clients - Cadastra novo cliente e cria a instância na Evolution API se necessário
+// POST /api/clients - Cadastra novo cliente (Evolution ou Meta Official)
 export async function POST(req: Request) {
   try {
     await ensureDatabaseSchema();
     const body = await req.json();
-    const { name, slug: customSlug, instanceName: customInstance } = body;
+    const {
+      name,
+      slug: customSlug,
+      instanceName: customInstance,
+      provider = 'evolution',
+      metaPhoneNumberId,
+      metaWabaId,
+      metaAccessToken,
+    } = body;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ error: 'Nome do cliente é obrigatório' }, { status: 400 });
@@ -158,18 +210,64 @@ export async function POST(req: Request) {
     let slug = customSlug ? slugify(customSlug) : slugify(cleanName);
     if (!slug) slug = `cliente-${Date.now()}`;
 
-    // Gera o nome da instância para a Evolution API (ex: cli_nomedocliente)
-    let instanceName = customInstance
-      ? customInstance.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_')
-      : `cli_${slug.replace(/-/g, '_')}`;
-
     // Garante unicidade do slug se já existir
     const existingSlug = await prisma.client.findUnique({ where: { slug } });
     if (existingSlug) {
       slug = `${slug}-${Math.floor(1000 + Math.random() * 9000)}`;
     }
 
-    // Garante unicidade da instanceName se já existir
+    // Rota 1: Cliente da API Oficial da Meta
+    if (provider === 'meta_official') {
+      if (!metaPhoneNumberId || !metaAccessToken) {
+        return NextResponse.json(
+          { error: 'Phone Number ID e Access Token são obrigatórios para conexão oficial Meta.' },
+          { status: 400 }
+        );
+      }
+
+      // Validação das credenciais diretamente com a Meta Graph API
+      const testResult = await testMetaCredentials({
+        phoneNumberId: metaPhoneNumberId.trim(),
+        accessToken: metaAccessToken.trim(),
+      });
+
+      if (!testResult.ok) {
+        return NextResponse.json(
+          { error: `Credenciais Meta inválidas: ${testResult.error}` },
+          { status: 400 }
+        );
+      }
+
+      let instanceName = customInstance
+        ? customInstance.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_')
+        : `meta_${metaPhoneNumberId.trim()}`;
+
+      const existingInstance = await prisma.client.findUnique({ where: { instanceName } });
+      if (existingInstance) {
+        instanceName = `${instanceName}_${Math.floor(1000 + Math.random() * 9000)}`;
+      }
+
+      const client = await prisma.client.create({
+        data: {
+          name: cleanName,
+          slug,
+          instanceName,
+          provider: 'meta_official',
+          metaPhoneNumberId: metaPhoneNumberId.trim(),
+          metaWabaId: metaWabaId?.trim() || null,
+          metaAccessToken: metaAccessToken.trim(),
+          status: 'connected',
+        },
+      });
+
+      return NextResponse.json({ success: true, client });
+    }
+
+    // Rota 2: Cliente Tradicional com Chip WhatsApp (Evolution API / Baileys)
+    let instanceName = customInstance
+      ? customInstance.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_')
+      : `cli_${slug.replace(/-/g, '_')}`;
+
     const existingInstance = await prisma.client.findUnique({ where: { instanceName } });
     if (existingInstance) {
       instanceName = `${instanceName}_${Math.floor(1000 + Math.random() * 9000)}`;
@@ -203,6 +301,7 @@ export async function POST(req: Request) {
         name: cleanName,
         slug,
         instanceName,
+        provider: 'evolution',
         status: 'disconnected',
       },
     });

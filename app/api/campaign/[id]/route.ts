@@ -12,7 +12,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       where: { id: campaignId },
       include: {
         client: {
-          select: { id: true, name: true, slug: true, instanceName: true, status: true },
+          select: { id: true, name: true, slug: true, instanceName: true, status: true, provider: true },
         },
         contacts: {
           select: {
@@ -23,6 +23,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
             status: true,
             error: true,
             contactGroupKey: true,
+            metaMessageId: true,
+            metaStatus: true,
             sentAt: true,
           } as any,
           orderBy: { createdAt: 'asc' },

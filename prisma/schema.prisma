@@ -14,9 +14,13 @@ model Client {
   name         String
   slug         String     @unique
   instanceName String     @unique
-  phoneNumber  String?
-  status       String     @default("disconnected") // connected, disconnected, connecting
-  createdAt    DateTime   @default(now())
+  phoneNumber       String?
+  status            String     @default("disconnected") // connected, disconnected, connecting
+  provider          String     @default("evolution")    // evolution, meta_official
+  metaPhoneNumberId String?
+  metaWabaId        String?
+  metaAccessToken   String?
+  createdAt         DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
   campaigns    Campaign[]
@@ -55,6 +59,12 @@ model Campaign {
   dedupDays         Int       @default(30)   // Dias para histórico de deduplicação por cliente
   allowedDdds       String?                  // Filtro de DDDs (ex: "61,62")
 
+  // Provedor Meta Cloud API Oficial
+  provider                String    @default("evolution") // evolution, meta_official
+  metaTemplateName        String?
+  metaTemplateLanguage    String?   @default("pt_BR")
+  metaTemplateComponents  String?   // JSON com mapeamento dos componentes/variáveis
+
   // Estado e Controle de Slots
   status            String    @default("pending") // pending, scheduled, running, waiting_next_window, paused, paused_disconnected, completed, canceled
   pauseReason       String?                       // Motivo claro se pausada
@@ -91,6 +101,9 @@ model Contact {
 
   status          String    @default("pending") // pending, processing, sent, no_whatsapp, failed, skipped_duplicate, skipped_group_done
   error           String?
+  
+  metaMessageId   String?   // wamid retornado pela Meta
+  metaStatus      String?   // sent, delivered, read, failed
   
   lockedAt        DateTime? // Lock atômico por destinatário
   sentAt          DateTime?

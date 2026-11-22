@@ -35,6 +35,8 @@ export default function Step4CadenceSchedule({
   loading,
   showToast,
 }: Props) {
+  const isMeta = formData.provider === 'meta_official';
+
   // Alternar dia da semana
   const toggleDay = (dayId: number) => {
     const exists = formData.allowedDays.includes(dayId);
@@ -76,24 +78,40 @@ export default function Step4CadenceSchedule({
   };
 
   // Aplicar Preset de Janelas
-  const applyPreset = (preset: 'split' | 'full' | 'conservative') => {
-    if (preset === 'split') {
+  const applyPreset = (preset: 'split' | 'full' | 'conservative' | 'meta_fast' | 'meta_balanced') => {
+    if (preset === 'meta_fast') {
+      updateFormData({
+        windows: [{ start: '08:00', end: '19:00', limit: 0 }],
+        dailyLimit: 0,
+        minDelaySec: 2,
+        maxDelaySec: 4,
+      });
+      showToast('Preset aplicado: Alta Performance Meta (2s a 4s por envio)', 'success');
+    } else if (preset === 'meta_balanced') {
+      updateFormData({
+        windows: [{ start: '08:30', end: '18:30', limit: 0 }],
+        dailyLimit: 0,
+        minDelaySec: 5,
+        maxDelaySec: 10,
+      });
+      showToast('Preset aplicado: Cadenciado Meta (5s a 10s por envio)', 'success');
+    } else if (preset === 'split') {
       updateFormData({
         windows: [
           { start: '07:30', end: '09:00', limit: 12 },
           { start: '17:30', end: '19:30', limit: 12 },
         ],
         dailyLimit: 24,
-        minDelaySec: 120,
-        maxDelaySec: 240,
+        minDelaySec: isMeta ? 3 : 120,
+        maxDelaySec: isMeta ? 6 : 240,
       });
       showToast('Preset aplicado: 2 Janelas (Manhã e Fim de Tarde)', 'success');
     } else if (preset === 'full') {
       updateFormData({
-        windows: [{ start: '08:30', end: '18:00', limit: 40 }],
-        dailyLimit: 40,
-        minDelaySec: 90,
-        maxDelaySec: 180,
+        windows: [{ start: '08:30', end: '18:00', limit: isMeta ? 0 : 40 }],
+        dailyLimit: isMeta ? 0 : 40,
+        minDelaySec: isMeta ? 3 : 90,
+        maxDelaySec: isMeta ? 6 : 180,
       });
       showToast('Preset aplicado: Horário Comercial Contínuo (08:30 - 18:00)', 'success');
     } else {
@@ -162,27 +180,55 @@ export default function Step4CadenceSchedule({
           {/* Presets Rápidos */}
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[10px] uppercase font-bold text-zinc-500 mr-1">Presets:</span>
-            <button
-              type="button"
-              onClick={() => applyPreset('split')}
-              className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-emerald-300 border border-zinc-700 transition-colors cursor-pointer"
-            >
-              2 Turnos (Manhã/Tarde)
-            </button>
-            <button
-              type="button"
-              onClick={() => applyPreset('full')}
-              className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition-colors cursor-pointer"
-            >
-              Comercial Único
-            </button>
-            <button
-              type="button"
-              onClick={() => applyPreset('conservative')}
-              className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-purple-300 border border-zinc-700 transition-colors cursor-pointer"
-            >
-              Chip Novo (Anti-Ban)
-            </button>
+            {isMeta ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('meta_fast')}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 border border-cyan-800/60 transition-colors cursor-pointer"
+                >
+                  ⚡ Alta Performance (2s - 4s)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('meta_balanced')}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-teal-300 border border-zinc-700 transition-colors cursor-pointer"
+                >
+                  Cadenciado Meta (5s - 10s)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('split')}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition-colors cursor-pointer"
+                >
+                  2 Turnos
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('split')}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-emerald-300 border border-zinc-700 transition-colors cursor-pointer"
+                >
+                  2 Turnos (Manhã/Tarde)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('full')}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition-colors cursor-pointer"
+                >
+                  Comercial Único
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('conservative')}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-purple-300 border border-zinc-700 transition-colors cursor-pointer"
+                >
+                  Chip Novo (Anti-Ban)
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -318,12 +364,14 @@ export default function Step4CadenceSchedule({
             </label>
             <input
               type="number"
-              min={15}
+              min={isMeta ? 1 : 15}
               value={formData.minDelaySec}
-              onChange={(e) => updateFormData({ minDelaySec: Number(e.target.value) || 15 })}
+              onChange={(e) => updateFormData({ minDelaySec: Number(e.target.value) || (isMeta ? 2 : 15) })}
               className="w-full bg-black/60 border border-zinc-700/60 rounded-xl p-2.5 text-sm text-zinc-200"
             />
-            <span className="text-[10px] text-zinc-500 block mt-1">Ex.: 120s entre mensagens.</span>
+            <span className="text-[10px] text-zinc-500 block mt-1">
+              {isMeta ? 'Ex.: 2s (API Oficial não sofre ban de chip).' : 'Ex.: 120s entre mensagens.'}
+            </span>
           </div>
 
           <div>
@@ -337,11 +385,13 @@ export default function Step4CadenceSchedule({
               onChange={(e) => updateFormData({ maxDelaySec: Number(e.target.value) || formData.minDelaySec })}
               className="w-full bg-black/60 border border-zinc-700/60 rounded-xl p-2.5 text-sm text-zinc-200"
             />
-            <span className="text-[10px] text-zinc-500 block mt-1">Intervalo randômico anti-ban.</span>
+            <span className="text-[10px] text-zinc-500 block mt-1">
+              {isMeta ? 'Ex.: 4s para ritmo acelerado.' : 'Intervalo randômico anti-ban.'}
+            </span>
           </div>
         </div>
 
-        {/* Regras Anti-Ban Evolution API */}
+        {/* Regras Anti-Ban Evolution API & Resiliência */}
         <div className="space-y-3 pt-4 border-t border-zinc-800/80">
           <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
@@ -349,17 +399,24 @@ export default function Step4CadenceSchedule({
           </span>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label className="flex items-start gap-3 p-3.5 rounded-2xl bg-black/40 border border-zinc-800 cursor-pointer hover:border-emerald-500/30 transition-colors">
+            <label
+              className={`flex items-start gap-3 p-3.5 rounded-2xl bg-black/40 border border-zinc-800 ${
+                isMeta ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-emerald-500/30'
+              } transition-colors`}
+            >
               <input
                 type="checkbox"
-                checked={formData.validateWhatsApp}
+                disabled={isMeta}
+                checked={isMeta ? false : formData.validateWhatsApp}
                 onChange={(e) => updateFormData({ validateWhatsApp: e.target.checked })}
                 className="mt-0.5 rounded border-zinc-700 text-emerald-500 focus:ring-0"
               />
               <div>
                 <span className="text-xs font-bold text-white block">Pré-validar WhatsApp no Envio</span>
                 <p className="text-[11px] text-zinc-400 mt-0.5">
-                  Verifica se o número tem WhatsApp ativo antes de gastar a cota. Se não tiver, marca como Sem WhatsApp sem consumir limite e pula em 2s.
+                  {isMeta
+                    ? 'Desnecessário na API Oficial: a Meta valida em tempo real se o destinatário possui conta de WhatsApp.'
+                    : 'Verifica se o número tem WhatsApp ativo antes de gastar a cota. Se não tiver, marca como Sem WhatsApp sem consumir limite e pula em 2s.'}
                 </p>
               </div>
             </label>
@@ -438,8 +495,17 @@ export default function Step4CadenceSchedule({
             Pronto para Iniciar Campanha Contínua
           </h4>
           <p className="text-xs text-zinc-300 mt-1 max-w-xl">
-            {formData.sanitizedContacts.length.toLocaleString('pt-BR')} destinatários válidos serão processados de forma 100% autocontida pelo worker no chip{' '}
-            <strong className="text-white">{formData.activeInstance}</strong>.
+            {formData.sanitizedContacts.length.toLocaleString('pt-BR')} destinatários válidos serão processados de forma 100% autocontida{' '}
+            {isMeta ? (
+              <span>
+                via <strong>API Oficial da Meta (Cloud API)</strong> com o template{' '}
+                <strong className="text-cyan-400">{formData.metaTemplateName || 'template_kelly'}</strong>.
+              </span>
+            ) : (
+              <span>
+                pelo worker no chip <strong className="text-white">{formData.activeInstance}</strong>.
+              </span>
+            )}
           </p>
         </div>
 

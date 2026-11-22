@@ -29,6 +29,9 @@ export interface ClientItem {
   slug: string;
   instanceName: string;
   status: string;
+  provider?: 'evolution' | 'meta_official';
+  metaPhoneNumberId?: string | null;
+  metaWabaId?: string | null;
 }
 
 export interface BroadcasterFormData {
@@ -36,6 +39,14 @@ export interface BroadcasterFormData {
   campaignName: string;
   selectedClientId: string;
   activeInstance: string;
+  provider: 'evolution' | 'meta_official';
+
+  // Configs API Oficial da Meta
+  metaTemplateName: string;
+  metaTemplateLanguage: string;
+  metaTemplateComponents?: any[];
+  metaHeaderUrl: string;
+  metaHeaderType: 'video' | 'image' | 'text' | 'document' | 'none';
 
   // Planilha & Mapeamento
   sheetFile: File | null;

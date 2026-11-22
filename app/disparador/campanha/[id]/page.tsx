@@ -7,7 +7,7 @@ import {
   Save, AlertTriangle, Users, Calendar, Settings, Trash2, 
   PauseCircle, Download, Edit3, Smartphone, ShieldCheck, 
   RefreshCw, Check, Search, Filter, Hash, Eye, Volume2, Video, 
-  ImageIcon, Plus, ExternalLink
+  ImageIcon, Plus, ExternalLink, Zap
 } from 'lucide-react';
 
 interface TimeWindow {
@@ -314,12 +314,20 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
                     <CheckCircle2 className="w-3.5 h-3.5" /> Concluída
                   </span>
                 )}
+                {campaign.provider === 'meta_official' && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 text-xs font-bold">
+                    <Zap className="w-3.5 h-3.5" /> API Oficial Meta
+                  </span>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400 mt-2">
-                <span>Instância: <strong className="text-zinc-200">{campaign.instanceName}</strong></span>
+                <span>{campaign.provider === 'meta_official' ? 'Canal: ' : 'Instância: '}<strong className="text-zinc-200">{campaign.instanceName}</strong></span>
                 {campaign.client && (
                   <span>• Cliente: <strong className="text-emerald-400">{campaign.client.name}</strong></span>
+                )}
+                {campaign.metaTemplateName && (
+                  <span>• Template: <strong className="text-cyan-400 font-mono">{campaign.metaTemplateName}</strong></span>
                 )}
                 <span>• Formato: <span className="uppercase text-zinc-300 font-bold">{campaign.messageMode}</span></span>
               </div>
@@ -606,6 +614,11 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
                       {c.status === 'sent' && (
                         <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold">
                           <CheckCircle2 className="w-3 h-3" /> Enviado
+                          {c.metaStatus && (
+                            <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/40 ml-1">
+                              {c.metaStatus}
+                            </span>
+                          )}
                         </span>
                       )}
                       {c.status === 'pending' && (

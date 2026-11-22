@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import { prisma, pool, ensureDatabaseSchema } from './prisma';
 import { renderTemplate } from './template';
 import { evaluateSchedule, WindowConfig, ScheduleConfig } from './schedule';
+import { sendMetaTemplateMessage } from './providers/meta';
 
 // Carrega variáveis de ambiente
 dotenv.config({ path: '.env.local' });
@@ -215,27 +216,47 @@ async function recoverStuckProcessingContacts() {
  * Processa 1 destinatário de uma campanha ativa com lock atômico.
  */
 async function processCampaignStep(campaignId: string) {
-  // 1. Carrega dados atualizados da campanha
+  // 1. Carrega dados atualizados da campanha e do cliente associado
   const campaign: any = await prisma.campaign.findUnique({
     where: { id: campaignId },
+    include: { client: true },
   });
 
   if (!campaign || !['running', 'scheduled', 'waiting_next_window', 'pending'].includes(campaign.status)) {
     return;
   }
 
-  // 2. Health check da instância do cliente
-  const isInstanceOpen = await checkInstanceStatus(campaign.instanceName);
-  if (!isInstanceOpen) {
-    console.warn(`[Worker] Instância "${campaign.instanceName}" desconectada. Pausando campanha "${campaign.name}" (${campaign.id}).`);
-    await prisma.campaign.update({
-      where: { id: campaign.id },
-      data: {
-        status: 'paused_disconnected',
-        pauseReason: `Instância WhatsApp "${campaign.instanceName}" desconectada. Reconecte o WhatsApp para retomar.`,
-      } as any,
-    });
-    return;
+  const isMeta = campaign.provider === 'meta_official' || campaign.client?.provider === 'meta_official';
+
+  // 2. Health check da conexão
+  if (isMeta) {
+    const metaPhoneId = campaign.client?.metaPhoneNumberId;
+    const metaToken = campaign.client?.metaAccessToken;
+    if (!metaPhoneId || !metaToken) {
+      console.warn(`[Worker] Campanha Meta Oficial "${campaign.name}" sem Phone Number ID ou Access Token configurados.`);
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: {
+          status: 'paused',
+          pauseReason: 'Credenciais da Meta Cloud API ausentes ou incompletas no cadastro do cliente.',
+        } as any,
+      });
+      return;
+    }
+  } else {
+    // Health check tradicional da Evolution API (chip/QR Code)
+    const isInstanceOpen = await checkInstanceStatus(campaign.instanceName);
+    if (!isInstanceOpen) {
+      console.warn(`[Worker] Instância "${campaign.instanceName}" desconectada. Pausando campanha "${campaign.name}" (${campaign.id}).`);
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: {
+          status: 'paused_disconnected',
+          pauseReason: `Instância WhatsApp "${campaign.instanceName}" desconectada. Reconecte o WhatsApp para retomar.`,
+        } as any,
+      });
+      return;
+    }
   }
 
   // 3. Avalia janelas de horário e cota diária/turno
@@ -349,7 +370,8 @@ async function processCampaignStep(campaignId: string) {
   console.log(`[Worker] Processando disparo para ${targetNumber} (Campanha: "${campaign.name}")...`);
 
   // 5. Pré-validação com a Evolution API (valida se o número tem WhatsApp)
-  if (campaign.validateWhatsApp) {
+  // Nota: A API Oficial da Meta já valida em tempo real e não precisa deste pré-check
+  if (!isMeta && campaign.validateWhatsApp) {
     const checkRes = await sendToEvolution({
       action: 'check',
       instance: campaign.instanceName,
@@ -375,7 +397,7 @@ async function processCampaignStep(campaignId: string) {
     }
   }
 
-  // 6. Parser do template dinâmico com Fallback, Spintax e Variáveis
+  // 6. Variáveis e Parser do template
   let extraVariables: Record<string, any> = {};
   try {
     if (contact.variablesJson) {
@@ -383,7 +405,7 @@ async function processCampaignStep(campaignId: string) {
     }
   } catch { }
 
-  const finalText = renderTemplate(campaign.messageTemplate, {
+  const finalText = renderTemplate(campaign.messageTemplate || '', {
     name: contact.name,
     phone: targetNumber,
     variables: extraVariables,
@@ -392,79 +414,120 @@ async function processCampaignStep(campaignId: string) {
     keepTitles: campaign.keepTitles ?? false,
   });
 
-  // 7. Simulação de Presença (Digitando / Gravando)
-  const isAudio = campaign.messageMode === 'audio';
-  const isVideo = campaign.messageMode === 'video';
-  const typingDelayMs = isAudio
-    ? 5000
-    : isVideo
-      ? 8000
-      : Math.min(Math.max((finalText.length || 20) * 40, 2500), 10000);
+  // 7. Execução do Envio Efetivo (Meta Oficial vs Evolution API)
+  let sendResult: { ok: boolean; status?: string | number; messageId?: string; data?: any; rawData?: any; error?: string };
 
-  await sendToEvolution({
-    action: 'presence',
-    instance: campaign.instanceName,
-    number: targetNumber,
-    delay: typingDelayMs,
-    mediaType: isAudio ? 'audio' : isVideo ? 'video' : 'text',
-  });
+  if (isMeta) {
+    const metaPhoneId = campaign.client?.metaPhoneNumberId;
+    const metaToken = campaign.client?.metaAccessToken;
 
-  await delay(typingDelayMs);
+    const headerType = campaign.messageMode === 'video' ? 'video' : campaign.messageMode === 'image' ? 'image' : undefined;
+    const headerUrl = campaign.mediaUrl || undefined;
 
-  // 8. Envio Efetivo da Mensagem / Mídia
-  let sendResult: { ok: boolean; status: number; data?: any; error?: string };
+    let bodyParameters: string[] = [];
+    if (campaign.metaTemplateComponents) {
+      try {
+        const comps = typeof campaign.metaTemplateComponents === 'string'
+          ? JSON.parse(campaign.metaTemplateComponents)
+          : campaign.metaTemplateComponents;
 
-  if (campaign.messageMode === 'text') {
-    sendResult = await sendToEvolution({
-      action: 'sendText',
-      instance: campaign.instanceName,
-      number: targetNumber,
-      message: finalText,
-    });
-  } else if (campaign.messageMode === 'image') {
-    sendResult = await sendToEvolution({
-      action: 'sendMedia',
-      instance: campaign.instanceName,
-      number: targetNumber,
-      mediaType: 'image',
-      mediaBase64: campaign.mediaBase64 || undefined,
-      mediaUrl: campaign.mediaUrl || undefined,
-      fileName: campaign.fileName || 'imagem.jpg',
-      caption: finalText,
-    });
-  } else if (campaign.messageMode === 'video') {
-    sendResult = await sendToEvolution({
-      action: 'sendMedia',
-      instance: campaign.instanceName,
-      number: targetNumber,
-      mediaType: 'video',
-      mediaBase64: campaign.mediaBase64 || undefined,
-      mediaUrl: campaign.mediaUrl || undefined,
-      fileName: campaign.fileName || 'video.mp4',
-      caption: finalText,
+        if (Array.isArray(comps)) {
+          bodyParameters = comps.map((paramKey: string) => {
+            if (paramKey === 'primeiro_nome') {
+              const parts = (contact.name || '').trim().split(/\s+/);
+              return parts[0] || '';
+            }
+            if (paramKey === 'nome_completo') return contact.name || '';
+            return extraVariables[paramKey] || '';
+          });
+        }
+      } catch {}
+    }
+
+    sendResult = await sendMetaTemplateMessage({
+      phoneNumberId: metaPhoneId,
+      accessToken: metaToken,
+      to: targetNumber,
+      templateName: campaign.metaTemplateName || 'template_kelly',
+      languageCode: campaign.metaTemplateLanguage || 'pt_BR',
+      headerType,
+      headerUrl,
+      bodyParameters,
     });
   } else {
-    // Áudio (PTT ou arquivo)
-    sendResult = await sendToEvolution({
-      action: 'sendAudio',
+    // Simulação de Presença (Digitando / Gravando) na Evolution
+    const isAudio = campaign.messageMode === 'audio';
+    const isVideo = campaign.messageMode === 'video';
+    const typingDelayMs = isAudio
+      ? 5000
+      : isVideo
+        ? 8000
+        : Math.min(Math.max((finalText.length || 20) * 40, 2500), 10000);
+
+    await sendToEvolution({
+      action: 'presence',
       instance: campaign.instanceName,
       number: targetNumber,
-      mediaBase64: campaign.mediaBase64 || undefined,
-      mediaUrl: campaign.mediaUrl || undefined,
-      fileName: campaign.fileName || 'audio.ogg',
-      isPtt: campaign.isPtt,
-      caption: finalText,
+      delay: typingDelayMs,
+      mediaType: isAudio ? 'audio' : isVideo ? 'video' : 'text',
     });
+
+    await delay(typingDelayMs);
+
+    if (campaign.messageMode === 'text') {
+      sendResult = await sendToEvolution({
+        action: 'sendText',
+        instance: campaign.instanceName,
+        number: targetNumber,
+        message: finalText,
+      });
+    } else if (campaign.messageMode === 'image') {
+      sendResult = await sendToEvolution({
+        action: 'sendMedia',
+        instance: campaign.instanceName,
+        number: targetNumber,
+        mediaType: 'image',
+        mediaBase64: campaign.mediaBase64 || undefined,
+        mediaUrl: campaign.mediaUrl || undefined,
+        fileName: campaign.fileName || 'imagem.jpg',
+        caption: finalText,
+      });
+    } else if (campaign.messageMode === 'video') {
+      sendResult = await sendToEvolution({
+        action: 'sendMedia',
+        instance: campaign.instanceName,
+        number: targetNumber,
+        mediaType: 'video',
+        mediaBase64: campaign.mediaBase64 || undefined,
+        mediaUrl: campaign.mediaUrl || undefined,
+        fileName: campaign.fileName || 'video.mp4',
+        caption: finalText,
+      });
+    } else {
+      // Áudio (PTT ou arquivo)
+      sendResult = await sendToEvolution({
+        action: 'sendAudio',
+        instance: campaign.instanceName,
+        number: targetNumber,
+        mediaBase64: campaign.mediaBase64 || undefined,
+        mediaUrl: campaign.mediaUrl || undefined,
+        fileName: campaign.fileName || 'audio.ogg',
+        isPtt: campaign.isPtt,
+        caption: finalText,
+      });
+    }
   }
 
-  // 9. Atualização de Resultados e Cotas
+  // 8. Atualização de Resultados e Cotas
   if (sendResult.ok) {
-    console.log(`[Worker] ✅ Envio com sucesso para ${targetNumber}`);
+    console.log(`[Worker] ✅ Envio com sucesso para ${targetNumber}${isMeta ? ' (via Meta Cloud API)' : ''}`);
     await prisma.contact.update({
       where: { id: contact.id },
       data: {
         status: 'sent',
         sentAt: new Date(),
+        metaMessageId: sendResult.messageId || null,
+        metaStatus: typeof sendResult.status === 'string' ? sendResult.status : 'accepted',
         error: null,
         lockedAt: null,
       } as any,
@@ -493,9 +556,11 @@ async function processCampaignStep(campaignId: string) {
     const newSlotCount = scheduleResult.currentSlotCount + 1;
     const newTodayCount = scheduleResult.todayCount + 1;
 
-    // Calcula intervalo randômico anti-ban
-    const minDelay = Math.max(campaign.delayMin, 10);
-    const maxDelay = Math.max(campaign.delayMax, minDelay);
+    // Calcula intervalo entre envios (cadência ágil para Meta vs anti-ban para chip)
+    const defaultMin = isMeta ? 2 : 15;
+    const defaultMax = isMeta ? 5 : 45;
+    const minDelay = Math.max(campaign.delayMin || defaultMin, 1);
+    const maxDelay = Math.max(campaign.delayMax || defaultMax, minDelay);
     const waitSeconds = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
     const nextDispatch = new Date(Date.now() + waitSeconds * 1000);
 
@@ -510,20 +575,38 @@ async function processCampaignStep(campaignId: string) {
       } as any,
     });
   } else {
-    const errorDetails = sendResult.error || JSON.stringify(sendResult.data) || 'Falha no envio';
+    const errorDetails = sendResult.error || JSON.stringify(sendResult.data || sendResult.rawData) || 'Falha no envio';
     console.warn(`[Worker] ❌ Falha no envio para ${targetNumber}:`, errorDetails);
 
-    await prisma.contact.update({
-      where: { id: contact.id },
-      data: {
-        status: 'failed',
-        error: errorDetails,
-        lockedAt: null,
-      } as any,
-    });
+    const isNoWhatsApp = isMeta && (
+      errorDetails.includes('131026') ||
+      errorDetails.toLowerCase().includes('not a valid whatsapp') ||
+      errorDetails.toLowerCase().includes('undeliverable')
+    );
+
+    if (isNoWhatsApp) {
+      console.log(`[Worker] Destinatário ${targetNumber} não possui WhatsApp na Meta. Marcando como NO_WHATSAPP.`);
+      await prisma.contact.update({
+        where: { id: contact.id },
+        data: {
+          status: 'no_whatsapp',
+          error: errorDetails,
+          lockedAt: null,
+        } as any,
+      });
+    } else {
+      await prisma.contact.update({
+        where: { id: contact.id },
+        data: {
+          status: 'failed',
+          error: errorDetails,
+          lockedAt: null,
+        } as any,
+      });
+    }
 
     // Delay de segurança pós-erro
-    const nextDispatch = new Date(Date.now() + Math.max(campaign.delayMin, 15) * 1000);
+    const nextDispatch = new Date(Date.now() + Math.max(campaign.delayMin || (isMeta ? 2 : 15), 2) * 1000);
     await prisma.campaign.update({
       where: { id: campaign.id },
       data: { nextDispatchAt: nextDispatch } as any,

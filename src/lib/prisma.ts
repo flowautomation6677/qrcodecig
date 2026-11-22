@@ -35,8 +35,18 @@ export async function ensureDatabaseSchema() {
       CREATE UNIQUE INDEX IF NOT EXISTS "Client_slug_key" ON "Client"("slug");
       CREATE UNIQUE INDEX IF NOT EXISTS "Client_instanceName_key" ON "Client"("instanceName");
 
+      -- Campos da API Oficial da Meta no Client
+      ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "provider" TEXT DEFAULT 'evolution';
+      ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "metaPhoneNumberId" TEXT;
+      ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "metaWabaId" TEXT;
+      ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "metaAccessToken" TEXT;
+
       -- Colunas adicionadas na Campaign para clientes e cadência contínua
       ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "clientId" TEXT;
+      ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "provider" TEXT DEFAULT 'evolution';
+      ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "metaTemplateName" TEXT;
+      ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "metaTemplateLanguage" TEXT DEFAULT 'pt_BR';
+      ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "metaTemplateComponents" TEXT;
       ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "timezone" TEXT DEFAULT 'America/Sao_Paulo';
       ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "allowedDays" TEXT DEFAULT '[1,2,3,4,5]';
       ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "windowsJson" TEXT DEFAULT '[]';
@@ -59,6 +69,8 @@ export async function ensureDatabaseSchema() {
       ALTER TABLE "Contact" ADD COLUMN IF NOT EXISTS "contactGroupKey" TEXT;
       ALTER TABLE "Contact" ADD COLUMN IF NOT EXISTS "variablesJson" TEXT;
       ALTER TABLE "Contact" ADD COLUMN IF NOT EXISTS "lockedAt" TIMESTAMP(3);
+      ALTER TABLE "Contact" ADD COLUMN IF NOT EXISTS "metaMessageId" TEXT;
+      ALTER TABLE "Contact" ADD COLUMN IF NOT EXISTS "metaStatus" TEXT;
 
       -- Índices de performance
       CREATE INDEX IF NOT EXISTS "Contact_normalizedPhone_idx" ON "Contact"("normalizedPhone");
