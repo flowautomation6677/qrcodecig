@@ -1,419 +1,583 @@
-import { Worker, Job } from 'bullmq';
-import IORedis from 'ioredis';
-import { prisma } from './prisma';
-import { campaignQueue } from './queue';
 import dotenv from 'dotenv';
+import { prisma, pool } from './prisma';
+import { renderTemplate } from './template';
+import { evaluateSchedule, WindowConfig, ScheduleConfig } from './schedule';
 
-// Carrega as variáveis de ambiente
+// Carrega variáveis de ambiente
 dotenv.config({ path: '.env.local' });
 dotenv.config();
 
-const connection = new IORedis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
-  maxRetriesPerRequest: null,
-});
-
-connection.on('error', (err) => {
-  console.warn('[Worker Redis] Aviso de conexão com Redis:', err?.message);
-});
-
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const parseSpintax = (text: string) => {
-  if (!text) return '';
-  let parsed = text;
-  const regex = /\{([^{}]+)\}/g;
-  let match;
-  while ((match = regex.exec(parsed)) !== null) {
-    const options = match[1].split('|');
-    const randomOption = options[Math.floor(Math.random() * options.length)];
-    parsed = parsed.replace(match[0], randomOption);
-    regex.lastIndex = 0;
-  }
-  return parsed;
-};
+interface EvolutionCheckResult {
+  exists: boolean;
+  number?: string;
+}
 
-const injectVariables = (text: string, contact: any) => {
-  if (!text) return '';
-  let result = text;
-  Object.keys(contact).forEach((key) => {
-    const regex = new RegExp(String.raw`\{${key}\}`, 'gi');
-    result = result.replace(regex, contact[key] || '');
-  });
-  return result;
-};
-
-// Envia diretamente para a Evolution API com zero dependência de portas ou HTTP loopback
-async function sendToEvolutionAPI(payload: any) {
-  const { action, number, message, instance, delay: pDelay, mediaType, mediaUrl, mediaBase64, fileName, caption, isPtt } = payload;
-  const instanceName = instance || process.env.EVOLUTION_INSTANCE_NAME;
+/**
+ * Consulta o status da conexão da instância diretamente na Evolution API.
+ */
+async function checkInstanceStatus(instanceName: string): Promise<boolean> {
   const apiUrl = process.env.EVOLUTION_API_URL?.replace(/\/$/, '');
   const apiKey = process.env.EVOLUTION_API_KEY;
 
-  if (apiUrl && apiKey && instanceName) {
-    try {
-      if (action === 'presence') {
-        const presenceType = mediaType === 'audio' ? 'recording' : 'composing';
-        const res = await fetch(`${apiUrl}/chat/sendPresence/${encodeURIComponent(instanceName)}`, {
-          method: 'POST',
-          headers: { apikey: apiKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ number, presence: presenceType, delay: pDelay || 5000 }),
-        });
-        return { ok: res.ok, status: res.status, json: async () => ({ success: true }) };
-      }
-
-      if (action === 'check') {
-        const res = await fetch(`${apiUrl}/chat/whatsappNumbers/${encodeURIComponent(instanceName)}`, {
-          method: 'POST',
-          headers: { apikey: apiKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ numbers: [number] }),
-        });
-        if (!res.ok) return { ok: true, status: 200, json: async () => ({ exists: true }) };
-        const data = await res.json();
-        const exists = Array.isArray(data) && data.length > 0 ? data[0]?.exists : true;
-        return { ok: true, status: 200, json: async () => ({ exists }) };
-      }
-
-      if (action === 'sendText') {
-        const res = await fetch(`${apiUrl}/message/sendText/${encodeURIComponent(instanceName)}`, {
-          method: 'POST',
-          headers: { apikey: apiKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            number,
-            text: message,
-            options: { delay: 0, presence: 'composing', linkPreview: true },
-            textMessage: { text: message },
-          }),
-        });
-        const data = await res.json();
-        return { ok: res.ok, status: res.status, json: async () => data };
-      }
-
-      if (action === 'sendMedia') {
-        let mediaData = mediaBase64 || mediaUrl;
-        if (mediaData && mediaData.startsWith('data:')) {
-          mediaData = mediaData.substring(mediaData.indexOf(',') + 1);
-        }
-        const res = await fetch(`${apiUrl}/message/sendMedia/${encodeURIComponent(instanceName)}`, {
-          method: 'POST',
-          headers: { apikey: apiKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            number,
-            mediatype: mediaType || 'image',
-            media: mediaData,
-            caption: caption || message || '',
-            fileName: fileName || (mediaType === 'image' ? 'imagem.jpg' : 'arquivo'),
-            options: { delay: 0, presence: 'composing' },
-            mediaMessage: {
-              mediatype: mediaType || 'image',
-              caption: caption || message || '',
-              media: mediaData,
-              fileName: fileName || (mediaType === 'image' ? 'imagem.jpg' : 'arquivo'),
-            },
-          }),
-        });
-        const data = await res.json();
-        return { ok: res.ok, status: res.status, json: async () => data };
-      }
-
-      if (action === 'sendAudio') {
-        let audioData = mediaBase64 || mediaUrl;
-        if (audioData && audioData.startsWith('data:')) {
-          audioData = audioData.substring(audioData.indexOf(',') + 1);
-        }
-        const res = await fetch(`${apiUrl}/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`, {
-          method: 'POST',
-          headers: { apikey: apiKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            number,
-            audio: audioData,
-            options: { delay: 0, presence: 'recording', encoding: true },
-            audioMessage: { audio: audioData },
-          }),
-        });
-        const data = await res.json();
-        return { ok: res.ok, status: res.status, json: async () => data };
-      }
-    } catch (directErr: any) {
-      console.warn('[Worker] Chamada direta falhou, tentando fallback HTTP local:', directErr?.message);
-    }
+  if (!apiUrl || !apiKey || !instanceName) {
+    return true; // Se não configurado, não bloqueia
   }
 
-  // Fallback caso a chamada direta encontre erro
-  const nextAppUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000';
-  const response = await fetch(`${nextAppUrl}/api/whatsapp/send`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
 
-  return response;
+    const res = await fetch(`${apiUrl}/instance/connectionState/${encodeURIComponent(instanceName)}`, {
+      method: 'GET',
+      headers: { apikey: apiKey, 'Content-Type': 'application/json' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) return false;
+    const data = await res.json();
+    const state = data?.instance?.state || data?.state;
+    return state === 'open';
+  } catch (err: any) {
+    console.warn(`[Worker] Falha ao verificar status da instância "${instanceName}":`, err?.message);
+    return false;
+  }
 }
 
-// Rastreia IDs de campanhas atualmente em processamento neste processo
-const activeCampaignIds = new Set<string>();
+/**
+ * Envia comandos para a Evolution API.
+ */
+async function sendToEvolution(payload: {
+  action: 'presence' | 'check' | 'sendText' | 'sendMedia' | 'sendAudio';
+  instance: string;
+  number: string;
+  message?: string;
+  delay?: number;
+  mediaType?: string;
+  mediaUrl?: string;
+  mediaBase64?: string;
+  fileName?: string;
+  caption?: string;
+  isPtt?: boolean;
+}): Promise<{ ok: boolean; status: number; data?: any; error?: string }> {
+  const { action, number, message, instance, delay: pDelay, mediaType, mediaUrl, mediaBase64, fileName, caption, isPtt } = payload;
+  const apiUrl = process.env.EVOLUTION_API_URL?.replace(/\/$/, '');
+  const apiKey = process.env.EVOLUTION_API_KEY;
 
-export const worker = new Worker(
-  'campaign-queue',
-  async (job: Job) => {
-    const campaignId = job.data?.campaignId;
-    console.log(`[Worker] Iniciando processamento do job: ${job.id} - Campanha: ${campaignId}`);
+  if (!apiUrl || !apiKey) {
+    return { ok: false, status: 500, error: 'Evolution API URL ou Key não configurados no servidor' };
+  }
 
-    if (!campaignId) {
-      console.error('[Worker] Job sem campaignId fornecido.');
-      return;
-    }
-
-    activeCampaignIds.add(campaignId);
-
-    try {
-      const campaign = await prisma.campaign.findUnique({
-        where: { id: campaignId },
-        include: { contacts: { where: { status: 'pending' } } },
-      });
-
-      if (!campaign) {
-        console.error(`[Worker] Campanha ${campaignId} não encontrada.`);
-        return;
-      }
-
-      if (campaign.contacts.length === 0) {
-        console.log(`[Worker] Campanha "${campaign.name}" (${campaign.id}) não tem contatos pendentes. Concluindo.`);
-        await prisma.campaign.update({
-          where: { id: campaign.id },
-          data: { status: 'completed' },
-        });
-        return;
-      }
-
-      // Atualiza o status para running
-      await prisma.campaign.update({
-        where: { id: campaign.id },
-        data: { status: 'running' },
-      });
-
-      const contacts = campaign.contacts;
-      let sent = 0;
-      let failed = 0;
-
-      for (let i = 0; i < contacts.length; i++) {
-        // Verifica se a campanha foi pausada ou parada externamente
-        const currentCampaign = await prisma.campaign.findUnique({
-          where: { id: campaign.id },
-          select: { status: true },
-        });
-
-        if (currentCampaign?.status !== 'running') {
-          console.log(`[Worker] Campanha ${campaign.id} interrompida. Status atual: ${currentCampaign?.status}`);
-          break;
-        }
-
-        const contact = contacts[i];
-        const targetNumber = String(contact.number).replace(/\D/g, '');
-        const finalText = parseSpintax(injectVariables(campaign.messageTemplate, contact));
-
-        console.log(`[Worker] Enviando para ${targetNumber} (${i + 1}/${contacts.length})...`);
-
-        try {
-          // 1. Validar (Check se existe no WhatsApp)
-          const checkRes = await sendToEvolutionAPI({
-            action: 'check',
-            number: targetNumber,
-            instance: campaign.instanceName,
-          });
-          const checkData = await checkRes.json().catch(() => ({ exists: true }));
-
-          if (!checkData.exists && checkRes.ok) {
-            await prisma.contact.update({
-              where: { id: contact.id },
-              data: { status: 'failed', error: 'Número não possui WhatsApp' },
-            });
-            failed++;
-            continue;
-          }
-
-          // 2. Presence (Simula gravação ou digitação)
-          const isAudio = campaign.messageMode === 'audio';
-          const isVideo = campaign.messageMode === 'video';
-          const typingDelay = isAudio ? 5000 : isVideo ? 8000 : Math.min(Math.max(finalText.length * 50, 3000), 12000);
-
-          await sendToEvolutionAPI({
-            action: 'presence',
-            number: targetNumber,
-            instance: campaign.instanceName,
-            delay: typingDelay,
-            mediaType: isAudio ? 'audio' : isVideo ? 'video' : 'text',
-          });
-          await delay(typingDelay);
-
-          // 3. Enviar Mensagem
-          let sendRes;
-          if (campaign.messageMode === 'text') {
-            sendRes = await sendToEvolutionAPI({
-              action: 'sendText',
-              number: targetNumber,
-              message: finalText,
-              instance: campaign.instanceName,
-            });
-          } else if (campaign.messageMode === 'image') {
-            sendRes = await sendToEvolutionAPI({
-              action: 'sendMedia',
-              number: targetNumber,
-              mediaType: 'image',
-              mediaBase64: campaign.mediaBase64,
-              mediaUrl: campaign.mediaUrl,
-              fileName: campaign.fileName || 'imagem.jpg',
-              caption: finalText,
-              instance: campaign.instanceName,
-            });
-          } else if (campaign.messageMode === 'video') {
-            sendRes = await sendToEvolutionAPI({
-              action: 'sendMedia',
-              number: targetNumber,
-              mediaType: 'video',
-              mediaBase64: campaign.mediaBase64,
-              mediaUrl: campaign.mediaUrl,
-              fileName: campaign.fileName || 'video.mp4',
-              caption: finalText,
-              instance: campaign.instanceName,
-            });
-          } else {
-            sendRes = await sendToEvolutionAPI({
-              action: 'sendAudio',
-              number: targetNumber,
-              mediaBase64: campaign.mediaBase64,
-              mediaUrl: campaign.mediaUrl,
-              fileName: campaign.fileName || 'audio.ogg',
-              isPtt: campaign.isPtt,
-              caption: finalText,
-              instance: campaign.instanceName,
-            });
-          }
-
-          if (sendRes.ok) {
-            await prisma.contact.update({
-              where: { id: contact.id },
-              data: { status: 'sent', sentAt: new Date() },
-            });
-            sent++;
-          } else {
-            const err = await sendRes.json().catch(() => ({ error: 'Falha no envio' }));
-            await prisma.contact.update({
-              where: { id: contact.id },
-              data: { status: 'failed', error: JSON.stringify(err) },
-            });
-            failed++;
-          }
-        } catch (e: any) {
-          await prisma.contact.update({
-            where: { id: contact.id },
-            data: { status: 'failed', error: e.message },
-          });
-          failed++;
-        }
-
-        // 4. Cadência Anti-Ban
-        if (i < contacts.length - 1) {
-          const isBatchEnd = (i + 1) % campaign.batchSize === 0;
-          if (isBatchEnd) {
-            console.log(`[Worker] Pausa de lote: ${campaign.batchPause} min...`);
-            await delay(campaign.batchPause * 60 * 1000);
-          } else {
-            const waitSeconds = Math.floor(Math.random() * (campaign.delayMax - campaign.delayMin + 1)) + campaign.delayMin;
-            console.log(`[Worker] Aguardando ${waitSeconds}s (Anti-Ban)...`);
-            await delay(waitSeconds * 1000);
-          }
-        }
-      }
-
-      // Finaliza a campanha se concluiu todos os contatos
-      const updatedCampaign = await prisma.campaign.findUnique({ where: { id: campaign.id } });
-      if (updatedCampaign?.status === 'running') {
-        await prisma.campaign.update({
-          where: { id: campaign.id },
-          data: { status: 'completed' },
-        });
-        console.log(`[Worker] Campanha "${campaign.name}" (${campaign.id}) concluída com sucesso. Enviados: ${sent}, Falhas: ${failed}`);
-      }
-    } finally {
-      activeCampaignIds.delete(campaignId);
-    }
-  },
-  { connection }
-);
-
-worker.on('failed', (job: Job | undefined, err: Error) => {
-  console.error(`[Worker] Job ${job?.id} falhou com erro: ${err.message}`);
-});
-
-worker.on('error', (err: Error) => {
-  console.error(`[Worker] Erro no Worker BullMQ: ${err?.message}`);
-});
-
-console.log('[Worker] Worker iniciado e aguardando campanhas na fila "campaign-queue"...');
-
-// Função de auto-recuperação de campanhas que ficaram pendentes ou interrompidas
-async function recoverPendingCampaigns() {
   try {
-    const unfinished = await prisma.campaign.findMany({
+    // 1. PRESENCE (simula digitação ou gravação)
+    if (action === 'presence') {
+      const presenceType = mediaType === 'audio' ? 'recording' : 'composing';
+      const res = await fetch(`${apiUrl}/chat/sendPresence/${encodeURIComponent(instance)}`, {
+        method: 'POST',
+        headers: { apikey: apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ number, presence: presenceType, delay: pDelay || 5000 }),
+      });
+      return { ok: res.ok, status: res.status };
+    }
+
+    // 2. CHECK (valida se o número possui WhatsApp ativo)
+    if (action === 'check') {
+      const res = await fetch(`${apiUrl}/chat/whatsappNumbers/${encodeURIComponent(instance)}`, {
+        method: 'POST',
+        headers: { apikey: apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numbers: [number] }),
+      });
+
+      if (!res.ok) {
+        // Se a verificação falhar por instabilidade na Evolution, assume que existe para tentar enviar
+        return { ok: true, status: 200, data: { exists: true } };
+      }
+
+      const data = await res.json();
+      const exists = Array.isArray(data) && data.length > 0 ? Boolean(data[0]?.exists) : true;
+      return { ok: true, status: 200, data: { exists } };
+    }
+
+    // 3. SEND TEXT
+    if (action === 'sendText') {
+      const res = await fetch(`${apiUrl}/message/sendText/${encodeURIComponent(instance)}`, {
+        method: 'POST',
+        headers: { apikey: apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          number,
+          text: message,
+          options: { delay: 0, presence: 'composing', linkPreview: true },
+          textMessage: { text: message },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, status: res.status, data };
+    }
+
+    // 4. SEND MEDIA (Imagem ou Vídeo)
+    if (action === 'sendMedia') {
+      let mediaData = mediaBase64 || mediaUrl;
+      if (mediaData && mediaData.startsWith('data:')) {
+        mediaData = mediaData.substring(mediaData.indexOf(',') + 1);
+      }
+
+      const res = await fetch(`${apiUrl}/message/sendMedia/${encodeURIComponent(instance)}`, {
+        method: 'POST',
+        headers: { apikey: apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          number,
+          mediatype: mediaType || 'image',
+          media: mediaData,
+          caption: caption || message || '',
+          fileName: fileName || (mediaType === 'video' ? 'video.mp4' : 'imagem.jpg'),
+          options: { delay: 0, presence: 'composing' },
+          mediaMessage: {
+            mediatype: mediaType || 'image',
+            caption: caption || message || '',
+            media: mediaData,
+            fileName: fileName || (mediaType === 'video' ? 'video.mp4' : 'imagem.jpg'),
+          },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, status: res.status, data };
+    }
+
+    // 5. SEND AUDIO (Nota de voz PTT ou arquivo)
+    if (action === 'sendAudio') {
+      let audioData = mediaBase64 || mediaUrl;
+      if (audioData && audioData.startsWith('data:')) {
+        audioData = audioData.substring(audioData.indexOf(',') + 1);
+      }
+
+      const endpoint = isPtt !== false ? 'sendWhatsAppAudio' : 'sendMedia';
+      const body =
+        isPtt !== false
+          ? {
+              number,
+              audio: audioData,
+              options: { delay: 0, presence: 'recording', encoding: true },
+              audioMessage: { audio: audioData },
+            }
+          : {
+              number,
+              mediatype: 'audio',
+              media: audioData,
+              fileName: fileName || 'audio.ogg',
+              options: { delay: 0, presence: 'recording' },
+              mediaMessage: { mediatype: 'audio', media: audioData, fileName: fileName || 'audio.ogg' },
+            };
+
+      const res = await fetch(`${apiUrl}/message/${endpoint}/${encodeURIComponent(instance)}`, {
+        method: 'POST',
+        headers: { apikey: apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, status: res.status, data };
+    }
+
+    return { ok: false, status: 400, error: 'Ação de envio não suportada' };
+  } catch (err: any) {
+    return { ok: false, status: 500, error: err.message };
+  }
+}
+
+/**
+ * Recupera contatos que ficaram presos em 'processing' por mais de 5 minutos
+ * (por exemplo, após queda de energia ou restart de container).
+ */
+async function recoverStuckProcessingContacts() {
+  try {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const result = await prisma.contact.updateMany({
       where: {
-        status: { in: ['pending', 'running', 'scheduled'] },
-      },
-      include: {
-        contacts: {
-          where: { status: 'pending' },
-          take: 1,
-        },
+        status: 'processing',
+        lockedAt: { lt: fiveMinutesAgo },
+      } as any,
+      data: {
+        status: 'pending',
+        lockedAt: null,
+      } as any,
+    });
+
+    if (result.count > 0) {
+      console.log(`[Worker] Auto-recuperados ${result.count} destinatários presos em 'processing'.`);
+    }
+  } catch (err: any) {
+    console.warn('[Worker] Aviso ao auto-recuperar contatos presos:', err?.message);
+  }
+}
+
+/**
+ * Processa 1 destinatário de uma campanha ativa com lock atômico.
+ */
+async function processCampaignStep(campaignId: string) {
+  // 1. Carrega dados atualizados da campanha
+  const campaign: any = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+  });
+
+  if (!campaign || !['running', 'scheduled', 'waiting_next_window', 'pending'].includes(campaign.status)) {
+    return;
+  }
+
+  // 2. Health check da instância do cliente
+  const isInstanceOpen = await checkInstanceStatus(campaign.instanceName);
+  if (!isInstanceOpen) {
+    console.warn(`[Worker] Instância "${campaign.instanceName}" desconectada. Pausando campanha "${campaign.name}" (${campaign.id}).`);
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        status: 'paused_disconnected',
+        pauseReason: `Instância WhatsApp "${campaign.instanceName}" desconectada. Reconecte o WhatsApp para retomar.`,
+      } as any,
+    });
+    return;
+  }
+
+  // 3. Avalia janelas de horário e cota diária/turno
+  let parsedWindows: WindowConfig[] = [];
+  try {
+    if (campaign.windowsJson) {
+      parsedWindows = JSON.parse(campaign.windowsJson);
+    }
+  } catch {}
+
+  let parsedAllowedDays = [1, 2, 3, 4, 5];
+  try {
+    if (campaign.allowedDays) {
+      parsedAllowedDays = JSON.parse(campaign.allowedDays);
+    }
+  } catch {}
+
+  const scheduleConfig: ScheduleConfig = {
+    timezone: campaign.timezone || 'America/Sao_Paulo',
+    allowedDays: parsedAllowedDays,
+    windows: parsedWindows.length > 0 ? parsedWindows : [{ start: '08:00', end: '18:00', limit: 0 }],
+    dailyLimit: campaign.dailyLimit || 0,
+  };
+
+  const scheduleResult = evaluateSchedule(
+    scheduleConfig,
+    {
+      currentSlot: campaign.currentSlot,
+      currentSlotCount: campaign.currentSlotCount,
+      todayDate: campaign.todayDate,
+      todayCount: campaign.todayCount,
+    },
+    new Date()
+  );
+
+  // Se não pode disparar agora (fora de horário, limite atingido ou final de semana)
+  if (!scheduleResult.canDispatch) {
+    console.log(
+      `[Worker] Campanha "${campaign.name}" aguardando janela. Motivo: ${scheduleResult.reason}. Próximo disparo em: ${scheduleResult.nextDispatchAt?.toISOString()}`
+    );
+
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        status: 'waiting_next_window',
+        pauseReason: scheduleResult.reason || 'Aguardando próxima janela permitida',
+        nextDispatchAt: scheduleResult.nextDispatchAt,
+        currentSlot: scheduleResult.slotKey,
+        currentSlotCount: scheduleResult.currentSlotCount,
+        todayDate: scheduleResult.todayDate,
+        todayCount: scheduleResult.todayCount,
+      } as any,
+    });
+    return;
+  }
+
+  // Se a campanha estava aguardando ou agendada e a janela abriu, transiciona para 'running'
+  if (campaign.status !== 'running') {
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: { status: 'running', pauseReason: null } as any,
+    });
+  }
+
+  // 4. Lock atômico por destinatário (PostgreSQL FOR UPDATE SKIP LOCKED)
+  // Seleciona 1 contato pendente e transiciona atomicamente para 'processing'
+  const lockQuery = `
+    UPDATE "Contact"
+    SET status = 'processing', "lockedAt" = NOW()
+    WHERE id = (
+      SELECT id FROM "Contact"
+      WHERE "campaignId" = $1 AND status = 'pending'
+      ORDER BY "createdAt" ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING id, number, "normalizedPhone", name, "contactGroupKey", "variablesJson";
+  `;
+
+  let contact: any = null;
+  try {
+    const rawResult = await pool.query(lockQuery, [campaign.id]);
+    if (rawResult.rows && rawResult.rows.length > 0) {
+      contact = rawResult.rows[0];
+    }
+  } catch (dbErr: any) {
+    console.error(`[Worker] Erro ao obter lock atômico de contato na campanha ${campaign.id}:`, dbErr.message);
+    return;
+  }
+
+  // Se não há contato pendente, verifica se a campanha foi concluída
+  if (!contact) {
+    const pendingOrProcessingCount = await prisma.contact.count({
+      where: {
+        campaignId: campaign.id,
+        status: { in: ['pending', 'processing'] },
       },
     });
 
-    if (unfinished.length === 0) return;
-
-    // Busca jobs atualmente ativos ou em espera na fila do BullMQ
-    const currentJobs = await campaignQueue.getJobs(['active', 'waiting', 'delayed']);
-    const queuedCampaignIds = new Set(currentJobs.map((j) => j.data?.campaignId));
-
-    for (const c of unfinished) {
-      // Se não há contatos pendentes restantes, marca campanha como concluída
-      if (!c.contacts || c.contacts.length === 0) {
-        if (c.status !== 'completed') {
-          console.log(`[Worker] Campanha "${c.name}" (ID: ${c.id}) sem contatos pendentes. Marcando como concluída.`);
-          await prisma.campaign.update({
-            where: { id: c.id },
-            data: { status: 'completed' },
-          });
-        }
-        continue;
-      }
-
-      // Se a campanha já está sendo processada ou já está na fila, pula para não duplicar
-      if (activeCampaignIds.has(c.id) || queuedCampaignIds.has(c.id)) {
-        continue;
-      }
-
-      let delayMs = 0;
-      if (c.scheduledAt) {
-        const diff = new Date(c.scheduledAt).getTime() - Date.now();
-        delayMs = diff > 0 ? diff : 0;
-      }
-
-      console.log(`[Worker] Auto-recuperando campanha pendente: "${c.name}" (ID: ${c.id}) com delay de ${delayMs}ms`);
-      await campaignQueue.add(
-        'start-campaign',
-        { campaignId: c.id },
-        {
-          delay: delayMs,
-          jobId: `campaign-${c.id}`,
-          removeOnComplete: true,
-          removeOnFail: true,
-        }
-      );
-      queuedCampaignIds.add(c.id);
+    if (pendingOrProcessingCount === 0) {
+      console.log(`[Worker] Campanha "${campaign.name}" (${campaign.id}) não possui contatos pendentes. Concluindo.`);
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: { status: 'completed' },
+      });
     }
-  } catch (err: any) {
-    console.warn('[Worker] Erro ao recuperar campanhas pendentes:', err?.message);
+    return;
+  }
+
+  const targetNumber = contact.normalizedPhone || contact.number;
+  console.log(`[Worker] Processando disparo para ${targetNumber} (Campanha: "${campaign.name}")...`);
+
+  // 5. Pré-validação com a Evolution API (valida se o número tem WhatsApp)
+  if (campaign.validateWhatsApp) {
+    const checkRes = await sendToEvolution({
+      action: 'check',
+      instance: campaign.instanceName,
+      number: targetNumber,
+    });
+
+    const exists = checkRes.ok && checkRes.data ? checkRes.data.exists : true;
+
+    if (!exists) {
+      console.log(`[Worker] Número ${targetNumber} não possui WhatsApp ativo. Marcando como NO_WHATSAPP (sem queimar cota).`);
+      await prisma.contact.update({
+        where: { id: contact.id },
+        data: {
+          status: 'no_whatsapp',
+          error: 'Número não possui conta de WhatsApp ativa',
+          lockedAt: null,
+        } as any,
+      });
+
+      // Micro-delay de 2.5s antes de pegar o próximo número
+      await delay(2500);
+      return;
+    }
+  }
+
+  // 6. Parser do template dinâmico com Fallback, Spintax e Variáveis
+  let extraVariables: Record<string, any> = {};
+  try {
+    if (contact.variablesJson) {
+      extraVariables = JSON.parse(contact.variablesJson);
+    }
+  } catch {}
+
+  const finalText = renderTemplate(campaign.messageTemplate, {
+    name: contact.name,
+    phone: targetNumber,
+    variables: extraVariables,
+    now: new Date(),
+    timezone: campaign.timezone,
+    keepTitles: campaign.keepTitles ?? false,
+  });
+
+  // 7. Simulação de Presença (Digitando / Gravando)
+  const isAudio = campaign.messageMode === 'audio';
+  const isVideo = campaign.messageMode === 'video';
+  const typingDelayMs = isAudio
+    ? 5000
+    : isVideo
+    ? 8000
+    : Math.min(Math.max((finalText.length || 20) * 40, 2500), 10000);
+
+  await sendToEvolution({
+    action: 'presence',
+    instance: campaign.instanceName,
+    number: targetNumber,
+    delay: typingDelayMs,
+    mediaType: isAudio ? 'audio' : isVideo ? 'video' : 'text',
+  });
+
+  await delay(typingDelayMs);
+
+  // 8. Envio Efetivo da Mensagem / Mídia
+  let sendResult: { ok: boolean; status: number; data?: any; error?: string };
+
+  if (campaign.messageMode === 'text') {
+    sendResult = await sendToEvolution({
+      action: 'sendText',
+      instance: campaign.instanceName,
+      number: targetNumber,
+      message: finalText,
+    });
+  } else if (campaign.messageMode === 'image') {
+    sendResult = await sendToEvolution({
+      action: 'sendMedia',
+      instance: campaign.instanceName,
+      number: targetNumber,
+      mediaType: 'image',
+      mediaBase64: campaign.mediaBase64 || undefined,
+      mediaUrl: campaign.mediaUrl || undefined,
+      fileName: campaign.fileName || 'imagem.jpg',
+      caption: finalText,
+    });
+  } else if (campaign.messageMode === 'video') {
+    sendResult = await sendToEvolution({
+      action: 'sendMedia',
+      instance: campaign.instanceName,
+      number: targetNumber,
+      mediaType: 'video',
+      mediaBase64: campaign.mediaBase64 || undefined,
+      mediaUrl: campaign.mediaUrl || undefined,
+      fileName: campaign.fileName || 'video.mp4',
+      caption: finalText,
+    });
+  } else {
+    // Áudio (PTT ou arquivo)
+    sendResult = await sendToEvolution({
+      action: 'sendAudio',
+      instance: campaign.instanceName,
+      number: targetNumber,
+      mediaBase64: campaign.mediaBase64 || undefined,
+      mediaUrl: campaign.mediaUrl || undefined,
+      fileName: campaign.fileName || 'audio.ogg',
+      isPtt: campaign.isPtt,
+      caption: finalText,
+    });
+  }
+
+  // 9. Atualização de Resultados e Cotas
+  if (sendResult.ok) {
+    console.log(`[Worker] ✅ Envio com sucesso para ${targetNumber}`);
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: {
+        status: 'sent',
+        sentAt: new Date(),
+        error: null,
+        lockedAt: null,
+      } as any,
+    });
+
+    // Se stopGroupOnSuccess estiver ativado e o contato tiver outros telefones no mesmo grupo
+    if (campaign.stopGroupOnSuccess && contact.contactGroupKey) {
+      const skipped = await prisma.contact.updateMany({
+        where: {
+          campaignId: campaign.id,
+          contactGroupKey: contact.contactGroupKey,
+          status: 'pending',
+          id: { not: contact.id },
+        } as any,
+        data: {
+          status: 'skipped_group_done',
+          error: 'Contato atendido com sucesso em outro número',
+        },
+      });
+      if (skipped.count > 0) {
+        console.log(`[Worker] ${skipped.count} telefone(s) adicionais do grupo "${contact.contactGroupKey}" marcados como SKIPPED_GROUP_DONE.`);
+      }
+    }
+
+    // Incrementa contadores de cota consumida
+    const newSlotCount = scheduleResult.currentSlotCount + 1;
+    const newTodayCount = scheduleResult.todayCount + 1;
+
+    // Calcula intervalo randômico anti-ban
+    const minDelay = Math.max(campaign.delayMin, 10);
+    const maxDelay = Math.max(campaign.delayMax, minDelay);
+    const waitSeconds = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+    const nextDispatch = new Date(Date.now() + waitSeconds * 1000);
+
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        currentSlot: scheduleResult.slotKey,
+        currentSlotCount: newSlotCount,
+        todayDate: scheduleResult.todayDate,
+        todayCount: newTodayCount,
+        nextDispatchAt: nextDispatch,
+      } as any,
+    });
+  } else {
+    const errorDetails = sendResult.error || JSON.stringify(sendResult.data) || 'Falha no envio';
+    console.warn(`[Worker] ❌ Falha no envio para ${targetNumber}:`, errorDetails);
+
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: {
+        status: 'failed',
+        error: errorDetails,
+        lockedAt: null,
+      } as any,
+    });
+
+    // Delay de segurança pós-erro
+    const nextDispatch = new Date(Date.now() + Math.max(campaign.delayMin, 15) * 1000);
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: { nextDispatchAt: nextDispatch } as any,
+    });
   }
 }
 
-// Inicia recuperação 3 segundos após boot e a cada 30 segundos continuamente
-setTimeout(recoverPendingCampaigns, 3000);
-setInterval(recoverPendingCampaigns, 30000);
+/**
+ * Loop principal do Worker (executado a cada 10-15s).
+ */
+export async function runWorkerIteration() {
+  try {
+    // 1. Recupera destinatários presos em 'processing'
+    await recoverStuckProcessingContacts();
+
+    // 2. Busca todas as campanhas elegíveis para disparo no momento
+    const now = new Date();
+    const activeCampaigns = await prisma.campaign.findMany({
+      where: {
+        status: { in: ['running', 'scheduled', 'waiting_next_window', 'pending'] },
+        OR: [{ nextDispatchAt: null }, { nextDispatchAt: { lte: now } }],
+      } as any,
+      select: { id: true, name: true },
+      take: 5,
+    });
+
+    for (const c of activeCampaigns) {
+      await processCampaignStep(c.id);
+    }
+  } catch (err: any) {
+    console.error('[Worker Loop] Erro na iteração do worker:', err.message);
+  }
+}
+
+let isRunning = false;
+
+export async function startWorkerDaemon() {
+  if (isRunning) return;
+  isRunning = true;
+  console.log('====================================================');
+  console.log('[Worker] Worker Autocontido de Campanhas Iniciado!');
+  console.log('[Worker] Persistência: 100% PostgreSQL | Zero Redis');
+  console.log('====================================================');
+
+  while (isRunning) {
+    await runWorkerIteration();
+    await delay(12000); // 12 segundos entre ticks do loop
+  }
+}
+
+// Execução direta quando disparado via CLI / runner.js
+if (require.main === module || process.argv[1]?.includes('worker')) {
+  startWorkerDaemon().catch((err) => {
+    console.error('[Worker Fatal] Erro fatal no worker:', err);
+    process.exit(1);
+  });
+}

@@ -348,9 +348,19 @@ export default function DashboardPage() {
                           <PlayCircle className="w-3.5 h-3.5" /> Rodando
                         </span>
                       )}
+                      {camp.status === 'waiting_next_window' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                          <Clock className="w-3.5 h-3.5" /> Próxima Janela
+                        </span>
+                      )}
                       {camp.status === 'paused' && (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
                           Pausada
+                        </span>
+                      )}
+                      {camp.status === 'paused_disconnected' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
+                          Desconectado
                         </span>
                       )}
                       {camp.status === 'completed' && (

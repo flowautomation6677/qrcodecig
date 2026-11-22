@@ -8,6 +8,7 @@
     "start": "node runner.js",
     "db:push": "prisma db push",
     "lint": "next lint",
+    "test": "node --experimental-strip-types --test tests/phone.test.ts tests/template.test.ts tests/schedule.test.ts",
     "worker": "tsx src/lib/worker.ts"
   },
   "keywords": [],
@@ -31,7 +32,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.5.4",
-    "tsx": "^4.23.13"
+    "tsx": "^4.23.13",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
@@ -41,6 +43,7 @@
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^5.1.1"
   }
 }

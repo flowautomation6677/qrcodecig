@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/src/lib/prisma';
-import { campaignQueue } from '@/src/lib/queue';
+import { normalizeBrPhone } from '@/src/lib/phone';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,14 +13,14 @@ export async function GET(request: Request) {
 
     const statusCounts = await prisma.campaign.groupBy({
       by: ['status'],
-      where: whereClause,
+      where: whereClause as any,
       _count: {
         id: true,
       },
     });
 
     const total = await prisma.campaign.count({
-      where: whereClause,
+      where: whereClause as any,
     });
 
     const stats = {
@@ -28,18 +28,26 @@ export async function GET(request: Request) {
       completed: statusCounts.find((s) => s.status === 'completed')?._count.id || 0,
       running: statusCounts.find((s) => s.status === 'running')?._count.id || 0,
       scheduled: statusCounts.find((s) => s.status === 'scheduled')?._count.id || 0,
+      waiting_next_window: statusCounts.find((s) => s.status === 'waiting_next_window')?._count.id || 0,
+      paused: statusCounts.find((s) => s.status === 'paused' || s.status === 'paused_disconnected')?._count.id || 0,
     };
 
     const campaigns = await prisma.campaign.findMany({
-      where: whereClause,
+      where: whereClause as any,
       take: 50,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
         name: true,
         status: true,
+        pauseReason: true,
         instanceName: true,
         scheduledAt: true,
+        nextDispatchAt: true,
+        currentSlot: true,
+        currentSlotCount: true,
+        todayCount: true,
+        dailyLimit: true,
         createdAt: true,
         clientId: true,
         client: {
@@ -52,7 +60,7 @@ export async function GET(request: Request) {
         _count: {
           select: { contacts: true },
         },
-      },
+      } as any,
     });
 
     return NextResponse.json({ campaigns, stats });
@@ -80,69 +88,88 @@ export async function POST(req: Request) {
       batchPause,
       contacts,
       scheduledAt,
+      // Novos campos da campanha contínua
+      timezone,
+      allowedDays,
+      windowsJson,
+      dailyLimit,
+      validateWhatsApp,
+      stopGroupOnSuccess,
+      keepTitles,
+      dedupDays,
+      allowedDdds,
     } = body;
 
     if (!instanceName || !contacts || contacts.length === 0) {
-      return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 });
+      return NextResponse.json({ error: 'Dados inválidos ou lista de contatos vazia' }, { status: 400 });
     }
 
-    // Calcular data de agendamento (se houver)
     let scheduleDate = null;
-    let delayMs = 0;
-
     if (scheduledAt) {
       scheduleDate = new Date(scheduledAt);
-      const now = new Date();
-      delayMs = scheduleDate.getTime() - now.getTime();
-      if (delayMs < 0) delayMs = 0; // Se for no passado, envia agora
+      if (scheduleDate.getTime() < Date.now()) {
+        scheduleDate = null; // Se for no passado, inicia imediatamente
+      }
     }
 
-    const status = scheduleDate && delayMs > 0 ? 'scheduled' : 'pending';
+    const initialStatus = scheduleDate ? 'scheduled' : 'running';
+    const nextDispatchAt = scheduleDate || new Date();
 
-    // 1. Criar a Campanha no Banco
+    // 1. Cria a campanha com todos os parâmetros persistidos no PostgreSQL
     const campaign = await prisma.campaign.create({
       data: {
         name: name || 'Nova Campanha',
         clientId: clientId || null,
         instanceName,
-        messageMode,
+        messageMode: messageMode || 'text',
         messageTemplate,
-        mediaBase64,
-        mediaUrl,
-        fileName,
-        isPtt,
-        delayMin: Number(delayMin),
-        delayMax: Number(delayMax),
-        batchSize: Number(batchSize),
-        batchPause: Number(batchPause),
+        mediaBase64: mediaBase64 || null,
+        mediaUrl: mediaUrl || null,
+        fileName: fileName || null,
+        isPtt: isPtt !== undefined ? Boolean(isPtt) : true,
+        delayMin: Number(delayMin) || 15,
+        delayMax: Number(delayMax) || 45,
+        batchSize: Number(batchSize) || 40,
+        batchPause: Number(batchPause) || 10,
+        timezone: timezone || 'America/Sao_Paulo',
+        allowedDays: typeof allowedDays === 'string' ? allowedDays : JSON.stringify(allowedDays || [1, 2, 3, 4, 5]),
+        windowsJson: typeof windowsJson === 'string' ? windowsJson : JSON.stringify(windowsJson || []),
+        dailyLimit: Number(dailyLimit) || 0,
+        validateWhatsApp: validateWhatsApp !== undefined ? Boolean(validateWhatsApp) : true,
+        stopGroupOnSuccess: stopGroupOnSuccess !== undefined ? Boolean(stopGroupOnSuccess) : true,
+        keepTitles: keepTitles !== undefined ? Boolean(keepTitles) : false,
+        dedupDays: Number(dedupDays) || 30,
+        allowedDdds: allowedDdds || null,
         scheduledAt: scheduleDate,
-        status,
+        nextDispatchAt,
+        status: initialStatus,
         contacts: {
-          create: contacts.map((c: any) => ({
-            number: c.number,
-            name: c.name || null,
-          })),
+          create: contacts.map((c: any) => {
+            const rawPhone = String(c.normalizedPhone || c.number || '');
+            const norm = normalizeBrPhone(rawPhone);
+            const normalizedPhone = norm.isValid ? norm.normalized : rawPhone.replace(/\D/g, '');
+
+            return {
+              number: String(c.number || rawPhone),
+              normalizedPhone,
+              name: c.name || null,
+              clientId: clientId || null,
+              contactGroupKey: c.contactGroupKey || null,
+              variablesJson: c.variables ? JSON.stringify(c.variables) : (c.variablesJson || null),
+              status: 'pending',
+            };
+          }),
         },
-      },
+      } as any,
     });
 
-    // 2. Enfileirar o Job no BullMQ
-    await campaignQueue.add(
-      'start-campaign',
-      { campaignId: campaign.id },
-      {
-        delay: delayMs,
-        jobId: `campaign-${campaign.id}`,
-        removeOnComplete: true,
-        removeOnFail: true,
-      }
-    );
+    console.log(`[API Campaign] Campanha "${campaign.name}" (${campaign.id}) criada com sucesso com ${contacts.length} destinatários.`);
 
     return NextResponse.json({
       success: true,
       campaignId: campaign.id,
-      status,
-      message: status === 'scheduled' ? 'Campanha agendada com sucesso' : 'Campanha iniciada',
+      status: initialStatus,
+      message: initialStatus === 'scheduled' ? 'Campanha agendada com sucesso' : 'Campanha criada e pronta para disparo',
     });
   } catch (error: any) {
     console.error('Erro ao criar campanha:', error);

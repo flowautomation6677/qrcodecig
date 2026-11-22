@@ -20,6 +20,7 @@ model Client {
   updatedAt    DateTime   @updatedAt
 
   campaigns    Campaign[]
+  contacts     Contact[]
 }
 
 model Campaign {
@@ -31,39 +32,72 @@ model Campaign {
   messageMode     String    @default("text") // text, image, audio, video
   messageTemplate String
   
-  // Media fields
+  // Media fields (Preservados para retrocompatibilidade)
   mediaBase64     String?
   mediaUrl        String?
   fileName        String?
   isPtt           Boolean   @default(true)
   
-  // Cadence
+  // Cadência e Delays
   delayMin        Int       @default(15)
   delayMax        Int       @default(45)
   batchSize       Int       @default(40)
   batchPause      Int       @default(10)
+
+  // Motor de Cadência Contínua e Janelas
+  timezone          String    @default("America/Sao_Paulo")
+  allowedDays       String    @default("[1,2,3,4,5]") // Dias da semana permitidos (0=dom, 1=seg... 6=sab)
+  windowsJson       String    @default("[]") // ex: [{"start":"07:30","end":"09:00","limit":12}]
+  dailyLimit        Int       @default(0)    // 0 = sem limite
+  validateWhatsApp  Boolean   @default(true) // Pré-validação via Evolution API
+  stopGroupOnSuccess Boolean  @default(true) // Pular outros telefones do mesmo contato após sucesso
+  keepTitles        Boolean   @default(false) // Preservar Dr./Dra. na personalização
+  dedupDays         Int       @default(30)   // Dias para histórico de deduplicação por cliente
+  allowedDdds       String?                  // Filtro de DDDs (ex: "61,62")
+
+  // Estado e Controle de Slots
+  status            String    @default("pending") // pending, scheduled, running, waiting_next_window, paused, paused_disconnected, completed, canceled
+  pauseReason       String?                       // Motivo claro se pausada
+  nextDispatchAt    DateTime?                     // Próximo disparo calculado
+  currentSlot       String?                       // ex: "2026-11-21#0"
+  currentSlotCount  Int       @default(0)         // Disparos consumidos no slot atual
+  todayDate         String?                       // ex: "2026-11-21"
+  todayCount        Int       @default(0)         // Disparos consumidos hoje
   
-  // Scheduling & Status
-  status          String    @default("pending") // pending, scheduled, running, paused, completed
   scheduledAt     DateTime?
-  
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   contacts        Contact[]
+
+  @@index([status, nextDispatchAt])
+  @@index([clientId])
 }
 
 model Contact {
-  id          String    @id @default(uuid())
-  campaignId  String
-  campaign    Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  id              String    @id @default(uuid())
+  campaignId      String
+  campaign        Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   
-  number      String
-  name        String?
+  clientId        String?
+  client          Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  number          String    // Número original bruto
+  normalizedPhone String    @default("") // Número normalizado com DDI 55
+  name            String?
   
-  status      String    @default("pending") // pending, checking, typing, recording, sent, failed
-  error       String?
+  contactGroupKey String?   // Chave para contatos com múltiplos telefones
+  variablesJson   String?   // JSON com colunas adicionais da planilha
+
+  status          String    @default("pending") // pending, processing, sent, no_whatsapp, failed, skipped_duplicate, skipped_group_done
+  error           String?
   
-  sentAt      DateTime?
-  createdAt   DateTime  @default(now())
+  lockedAt        DateTime? // Lock atômico por destinatário
+  sentAt          DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([campaignId, status])
+  @@index([clientId, normalizedPhone, sentAt])
+  @@index([campaignId, contactGroupKey])
+  @@index([normalizedPhone])
 }

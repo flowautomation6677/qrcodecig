@@ -1,11 +1,20 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft, CheckCircle2, Clock, PlayCircle, XCircle, 
-  Save, AlertTriangle, Users, Calendar, Settings, Trash2, PauseCircle 
+  Save, AlertTriangle, Users, Calendar, Settings, Trash2, 
+  PauseCircle, Download, Edit3, Smartphone, ShieldCheck, 
+  RefreshCw, Check, Search, Filter, Hash, Eye, Volume2, Video, 
+  ImageIcon, Plus, ExternalLink
 } from 'lucide-react';
+
+interface TimeWindow {
+  start: string;
+  end: string;
+  limit: number;
+}
 
 export default function CampanhaDetailsPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -13,34 +22,30 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
   const [contacts, setContacts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Edit form states
-  const [name, setName] = useState('');
-  const [messageTemplate, setMessageTemplate] = useState('');
-  const [scheduledAt, setScheduledAt] = useState('');
-  const [delayMin, setDelayMin] = useState(15);
-  const [delayMax, setDelayMax] = useState(45);
-  const [batchSize, setBatchSize] = useState(40);
-  const [batchPause, setBatchPause] = useState(10);
-  
+  // Filtros na tabela de contatos
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Modal de Edição Rápida
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editTemplate, setEditTemplate] = useState('');
+  const [editMediaUrl, setEditMediaUrl] = useState('');
+  const [editDelayMin, setEditDelayMin] = useState(120);
+  const [editDelayMax, setEditDelayMax] = useState(240);
+  const [editDailyLimit, setEditDailyLimit] = useState(24);
+  const [editWindows, setEditWindows] = useState<TimeWindow[]>([]);
+  const [editValidateWhatsApp, setEditValidateWhatsApp] = useState(true);
+  const [editStopGroup, setEditStopGroup] = useState(true);
+
   const [saving, setSaving] = useState(false);
   const [dispatching, setDispatching] = useState(false);
-  const [toast, setToast] = useState<{message: string, type: 'success'|'error'} | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
 
-  const showToast = (message: string, type: 'success'|'error') => {
+  const showToast = (message: string, type: 'success' | 'error' | 'warning') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 4000);
   };
-
-  useEffect(() => {
-    fetchCampaign();
-    // Se a campanha estiver rodando, pode fazer um polling para atualizar os logs
-    const interval = setInterval(() => {
-      if (campaign && campaign.status === 'running') {
-        fetchCampaign(false); // silencioso
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [params.id, campaign?.status]);
 
   const fetchCampaign = async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -51,64 +56,86 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
         setCampaign(data.campaign);
         setContacts(data.contacts || []);
         
-        // Populate form if it's the first load
+        // Inicializar form de edição
         if (showLoading) {
-          setName(data.campaign.name || '');
-          setMessageTemplate(data.campaign.messageTemplate || '');
-          setDelayMin(data.campaign.delayMin || 15);
-          setDelayMax(data.campaign.delayMax || 45);
-          setBatchSize(data.campaign.batchSize || 40);
-          setBatchPause(data.campaign.batchPause || 10);
-          if (data.campaign.scheduledAt) {
-            // Convert to local datetime-local format
-            const d = new Date(data.campaign.scheduledAt);
-            const tzOffset = d.getTimezoneOffset() * 60000;
-            const localISOTime = (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16);
-            setScheduledAt(localISOTime);
+          setEditName(data.campaign.name || '');
+          setEditTemplate(data.campaign.messageTemplate || '');
+          setEditMediaUrl(data.campaign.mediaUrl || '');
+          setEditDelayMin(data.campaign.delayMin || 120);
+          setEditDelayMax(data.campaign.delayMax || 240);
+          setEditDailyLimit(data.campaign.dailyLimit || 24);
+          setEditValidateWhatsApp(data.campaign.validateWhatsApp !== false);
+          setEditStopGroup(data.campaign.stopGroupOnSuccess !== false);
+
+          try {
+            const parsedWins = typeof data.campaign.windowsJson === 'string'
+              ? JSON.parse(data.campaign.windowsJson)
+              : data.campaign.windowsJson || [];
+            setEditWindows(parsedWins);
+          } catch {
+            setEditWindows([]);
           }
         }
       }
     } catch (err) {
       console.error(err);
-      showToast('Erro ao carregar campanha', 'error');
+      showToast('Erro ao carregar dados da campanha', 'error');
     } finally {
       if (showLoading) setLoading(false);
     }
   };
 
-  const handleSave = async () => {
+  useEffect(() => {
+    fetchCampaign(true);
+    const interval = setInterval(() => {
+      // Polling ativo quando estiver rodando ou esperando janela
+      if (campaign && (campaign.status === 'running' || campaign.status === 'waiting_next_window')) {
+        fetchCampaign(false);
+      }
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [params.id, campaign?.status]);
+
+  // Salvar Edição Rápida via PATCH
+  const handleSavePatch = async () => {
     setSaving(true);
     try {
       const res = await fetch(`/api/campaign/${params.id}`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name,
-          messageTemplate,
-          scheduledAt: scheduledAt || null,
-          delayMin,
-          delayMax,
-          batchSize,
-          batchPause
-        })
+          name: editName,
+          messageTemplate: editTemplate,
+          mediaUrl: editMediaUrl || null,
+          delayMin: editDelayMin,
+          delayMax: editDelayMax,
+          dailyLimit: editDailyLimit,
+          windowsJson: editWindows,
+          validateWhatsApp: editValidateWhatsApp,
+          stopGroupOnSuccess: editStopGroup,
+        }),
       });
+
+      const data = await res.json();
       if (res.ok) {
         showToast('Campanha atualizada com sucesso!', 'success');
+        setIsEditModalOpen(false);
         fetchCampaign(false);
       } else {
-        showToast('Erro ao atualizar', 'error');
+        showToast(data.error || 'Erro ao atualizar campanha', 'error');
       }
-    } catch (err) {
-      showToast('Erro na requisição', 'error');
+    } catch (err: any) {
+      showToast('Erro ao conectar ao servidor: ' + err.message, 'error');
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const handlePause = async () => {
     try {
       const res = await fetch(`/api/campaign/${params.id}/pause`, { method: 'POST' });
       if (res.ok) {
-        showToast('Campanha pausada!', 'success');
+        showToast('Campanha pausada com sucesso!', 'success');
         fetchCampaign(false);
       } else showToast('Erro ao pausar', 'error');
     } catch {
@@ -129,7 +156,7 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
   };
 
   const handleDispatchNow = async () => {
-    if (!confirm('Deseja iniciar o disparo desta campanha agora mesmo?')) return;
+    if (!confirm('Deseja forçar o próximo disparo desta campanha agora?')) return;
     setDispatching(true);
     try {
       const res = await fetch(`/api/campaign/${params.id}/dispatch-now`, { method: 'POST' });
@@ -148,7 +175,7 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
   };
 
   const handleDelete = async () => {
-    if (!confirm('Tem certeza que deseja excluir esta campanha?')) return;
+    if (!confirm('Tem certeza que deseja excluir esta campanha e todos os seus registros?')) return;
     try {
       const res = await fetch(`/api/campaign/${params.id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -160,236 +187,669 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
     }
   };
 
+  // Helper de janelas na modal de edição
+  const addEditWindow = () => {
+    setEditWindows([...editWindows, { start: '08:00', end: '10:00', limit: 12 }]);
+  };
+
+  const removeEditWindow = (index: number) => {
+    setEditWindows(editWindows.filter((_, i) => i !== index));
+  };
+
+  const updateEditWindow = (index: number, updates: Partial<TimeWindow>) => {
+    setEditWindows(editWindows.map((w, i) => (i === index ? { ...w, ...updates } : w)));
+  };
+
+  // Filtragem da tabela de contatos
+  const filteredContacts = useMemo(() => {
+    return contacts.filter((c) => {
+      const matchesSearch =
+        !searchTerm ||
+        String(c.normalizedPhone || c.number || '').includes(searchTerm) ||
+        (c.name && c.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+      if (!matchesSearch) return false;
+
+      if (statusFilter === 'all') return true;
+      if (statusFilter === 'sent') return c.status === 'sent';
+      if (statusFilter === 'pending') return c.status === 'pending' || c.status === 'processing';
+      if (statusFilter === 'no_whatsapp') return c.status === 'no_whatsapp';
+      if (statusFilter === 'failed') return c.status === 'failed';
+      if (statusFilter === 'skipped') return c.status === 'skipped_group_done' || c.status === 'skipped_duplicate';
+      return true;
+    });
+  }, [contacts, searchTerm, statusFilter]);
+
   if (loading) {
     return (
-      <div className="p-8 max-w-6xl mx-auto flex justify-center mt-20">
-        <div className="w-8 h-8 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin"></div>
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin" />
       </div>
     );
   }
 
   if (!campaign) {
     return (
-      <div className="p-8 max-w-6xl mx-auto text-center mt-20">
-        <h1 className="text-2xl font-bold text-white mb-4">Campanha não encontrada</h1>
-        <button onClick={() => router.push('/disparador')} className="text-emerald-400 hover:underline">Voltar ao Dashboard</button>
+      <div className="p-8 max-w-4xl mx-auto text-center mt-20 text-white">
+        <h1 className="text-2xl font-bold mb-4">Campanha não encontrada</h1>
+        <button
+          onClick={() => router.push('/disparador')}
+          className="text-emerald-400 hover:underline"
+        >
+          Voltar ao Painel
+        </button>
       </div>
     );
   }
 
-  const isEditable = ['pending', 'scheduled', 'paused'].includes(campaign.status);
+  const isEditable = ['pending', 'scheduled', 'paused', 'waiting_next_window', 'paused_disconnected'].includes(
+    campaign.status
+  );
 
   return (
-    <div className="p-4 sm:p-8 max-w-[1600px] mx-auto text-white">
-      {/* Toast */}
+    <div className="min-h-screen bg-black text-white p-4 sm:p-6 lg:p-8 font-sans selection:bg-emerald-500/30">
+      {/* Toast Notification */}
       {toast && (
-        <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl transition-all animate-in fade-in slide-in-from-top-4 ${
-          toast.type === 'error' ? 'bg-red-500/10 border border-red-500/20 text-red-400' : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
-        }`}>
-          {toast.type === 'error' ? <XCircle className="w-5 h-5"/> : <CheckCircle2 className="w-5 h-5"/>}
+        <div
+          className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl transition-all animate-in fade-in slide-in-from-top-4 ${
+            toast.type === 'error'
+              ? 'bg-red-500/10 border border-red-500/20 text-red-400'
+              : toast.type === 'success'
+              ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+              : 'bg-amber-500/10 border border-amber-500/20 text-amber-400'
+          }`}
+        >
+          {toast.type === 'error' && <XCircle className="w-5 h-5" />}
+          {toast.type === 'success' && <CheckCircle2 className="w-5 h-5" />}
+          {toast.type === 'warning' && <AlertTriangle className="w-5 h-5" />}
           <span className="font-medium text-sm">{toast.message}</span>
         </div>
       )}
 
-      {/* Header */}
-      <header className="flex items-center justify-between mb-8 pb-6 border-b border-zinc-800/80">
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={() => router.push('/disparador')}
-            className="w-10 h-10 flex items-center justify-center rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-3">
-              {campaign.name}
-              {campaign.status === 'completed' && <span className="text-xs px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">Concluída</span>}
-              {campaign.status === 'running' && <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 animate-pulse">Rodando</span>}
-              {campaign.status === 'scheduled' && <span className="text-xs px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">Agendada</span>}
-              {campaign.status === 'paused' && <span className="text-xs px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">Pausada</span>}
-            </h1>
-            <p className="text-sm text-zinc-500 mt-1">Modo: <span className="uppercase text-zinc-300 font-bold">{campaign.messageMode}</span></p>
+      <div className="max-w-[1500px] mx-auto space-y-8">
+        
+        {/* Header com Status & Ações */}
+        <header className="flex flex-col lg:flex-row lg:items-center justify-between border-b border-zinc-800/80 pb-6 gap-4">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => router.push('/disparador')}
+              className="w-10 h-10 flex items-center justify-center rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                  {campaign.name}
+                </h1>
+
+                {/* Status Badges */}
+                {campaign.status === 'running' && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-bold animate-pulse">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span> Rodando
+                  </span>
+                )}
+                {campaign.status === 'waiting_next_window' && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 text-xs font-bold">
+                    <Clock className="w-3.5 h-3.5" /> Aguardando Próxima Janela
+                  </span>
+                )}
+                {campaign.status === 'scheduled' && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/30 text-xs font-bold">
+                    <Calendar className="w-3.5 h-3.5" /> Agendada
+                  </span>
+                )}
+                {campaign.status === 'paused' && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 text-xs font-bold">
+                    <PauseCircle className="w-3.5 h-3.5" /> Pausada
+                  </span>
+                )}
+                {campaign.status === 'paused_disconnected' && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/30 text-xs font-bold">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Pausada (WhatsApp Desconectado)
+                  </span>
+                )}
+                {campaign.status === 'completed' && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 text-xs font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Concluída
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400 mt-2">
+                <span>Instância: <strong className="text-zinc-200">{campaign.instanceName}</strong></span>
+                {campaign.client && (
+                  <span>• Cliente: <strong className="text-emerald-400">{campaign.client.name}</strong></span>
+                )}
+                <span>• Formato: <span className="uppercase text-zinc-300 font-bold">{campaign.messageMode}</span></span>
+              </div>
+            </div>
+          </div>
+
+          {/* Botões de Ação */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Exportar CSV */}
+            <a
+              href={`/api/campaign/${params.id}/export`}
+              download
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs transition-all cursor-pointer shadow"
+            >
+              <Download className="w-4 h-4 text-emerald-400" />
+              Exportar Relatório CSV
+            </a>
+
+            {/* Editar Campanha */}
+            {isEditable && (
+              <button
+                onClick={() => setIsEditModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-emerald-400 border border-emerald-500/30 font-bold text-xs transition-all cursor-pointer"
+              >
+                <Edit3 className="w-4 h-4" />
+                Editar Campanha
+              </button>
+            )}
+
+            {/* Pausar */}
+            {(campaign.status === 'running' || campaign.status === 'waiting_next_window') && (
+              <button
+                onClick={handlePause}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold text-xs transition-all cursor-pointer"
+              >
+                <PauseCircle className="w-4 h-4" />
+                Pausar
+              </button>
+            )}
+
+            {/* Retomar */}
+            {(campaign.status === 'paused' || campaign.status === 'paused_disconnected') && (
+              <button
+                onClick={handleResume}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold text-xs transition-all cursor-pointer"
+              >
+                <PlayCircle className="w-4 h-4" />
+                Retomar
+              </button>
+            )}
+
+            {/* Disparar Agora */}
+            {['pending', 'scheduled', 'paused', 'waiting_next_window'].includes(campaign.status) && (
+              <button
+                onClick={handleDispatchNow}
+                disabled={dispatching}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition-all disabled:opacity-50 cursor-pointer shadow-lg shadow-emerald-500/20"
+              >
+                <PlayCircle className="w-4 h-4 fill-black" />
+                {dispatching ? 'Iniciando...' : 'Disparar Agora'}
+              </button>
+            )}
+
+            {/* Excluir */}
+            <button
+              onClick={handleDelete}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 font-bold text-xs transition-all cursor-pointer"
+              title="Excluir campanha"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </header>
+
+        {/* Alerta se chip desconectado */}
+        {campaign.status === 'paused_disconnected' && (
+          <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+              <strong>WhatsApp Desconectado:</strong> O envio foi pausado automaticamente porque a instância "{campaign.instanceName}" perdeu conexão. Reconecte o chip e clique em Retomar.
+            </span>
+            <a
+              href={`/conectar/${campaign.client?.slug || ''}`}
+              target="_blank"
+              className="underline font-bold hover:text-white flex items-center gap-1"
+            >
+              Abrir QR Code de Conexão <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+        )}
+
+        {/* Cartões de Contadores Reais por Status */}
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+          <div className="bg-zinc-900/40 p-4 rounded-2xl border border-zinc-800">
+            <span className="text-[10px] uppercase font-bold text-zinc-500 block">Total</span>
+            <p className="text-2xl font-light text-white mt-1">{campaign.total}</p>
+          </div>
+
+          <div className="bg-emerald-950/20 p-4 rounded-2xl border border-emerald-500/30">
+            <span className="text-[10px] uppercase font-bold text-emerald-400 block flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" /> Enviados
+            </span>
+            <p className="text-2xl font-bold text-emerald-400 mt-1">{campaign.sent}</p>
+          </div>
+
+          <div className="bg-zinc-900/40 p-4 rounded-2xl border border-zinc-800">
+            <span className="text-[10px] uppercase font-bold text-zinc-400 block flex items-center gap-1">
+              <Clock className="w-3 h-3" /> Pendentes
+            </span>
+            <p className="text-2xl font-light text-zinc-300 mt-1">{campaign.pending}</p>
+          </div>
+
+          <div className="bg-amber-950/20 p-4 rounded-2xl border border-amber-500/30">
+            <span className="text-[10px] uppercase font-bold text-amber-400 block flex items-center gap-1">
+              <Smartphone className="w-3 h-3" /> Sem WhatsApp
+            </span>
+            <p className="text-2xl font-bold text-amber-400 mt-1">{campaign.noWhatsApp}</p>
+          </div>
+
+          <div className="bg-red-950/20 p-4 rounded-2xl border border-red-500/30">
+            <span className="text-[10px] uppercase font-bold text-red-400 block flex items-center gap-1">
+              <XCircle className="w-3 h-3" /> Falhas
+            </span>
+            <p className="text-2xl font-bold text-red-400 mt-1">{campaign.failed}</p>
+          </div>
+
+          <div className="bg-purple-950/20 p-4 rounded-2xl border border-purple-500/30">
+            <span className="text-[10px] uppercase font-bold text-purple-400 block flex items-center gap-1">
+              <ShieldCheck className="w-3 h-3" /> Ignorados
+            </span>
+            <p className="text-2xl font-bold text-purple-400 mt-1">{campaign.skipped}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {(campaign.status === 'running' || campaign.status === 'scheduled' || campaign.status === 'pending') && (
-            <button 
-              onClick={handlePause}
-              className="flex items-center gap-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 px-4 py-2.5 rounded-xl font-bold transition-all text-sm"
-            >
-              <PauseCircle className="w-4 h-4" />
-              Pausar
-            </button>
-          )}
 
-          {(campaign.status === 'pending' || campaign.status === 'scheduled' || campaign.status === 'paused') && (
-            <button 
-              onClick={handleDispatchNow}
-              disabled={dispatching}
-              className="flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 px-4 py-2.5 rounded-xl font-bold transition-all text-sm disabled:opacity-50"
-            >
-              <PlayCircle className="w-4 h-4" />
-              {dispatching ? 'Iniciando...' : 'Disparar Agora'}
-            </button>
-          )}
+        {/* Painel de Monitoramento da Cadência & Janela Atual */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Card: Status da Janela e Próximo Disparo */}
+          <div className="bg-zinc-900/40 p-5 rounded-3xl border border-zinc-800/60 space-y-3">
+            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Clock className="w-4 h-4 text-emerald-400" />
+              Janela Atual & Próximo Disparo
+            </span>
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-400">Slot Ativo:</span>
+                <span className="font-mono text-zinc-200 font-semibold">
+                  {campaign.currentSlot || 'Aguardando próxima janela'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-400">Próximo Disparo:</span>
+                <span className="font-mono text-emerald-400 font-bold">
+                  {campaign.nextDispatchAt
+                    ? new Date(campaign.nextDispatchAt).toLocaleString('pt-BR')
+                    : 'Imediato'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-400">Intervalo Randômico:</span>
+                <span className="font-mono text-zinc-300">
+                  {campaign.delayMin}s – {campaign.delayMax}s
+                </span>
+              </div>
+            </div>
+          </div>
 
-          {campaign.status === 'paused' && (
-            <button 
-              onClick={handleResume}
-              className="flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 px-4 py-2.5 rounded-xl font-bold transition-all text-sm"
-            >
-              <PlayCircle className="w-4 h-4" />
-              Retomar
-            </button>
-          )}
+          {/* Card: Consumo de Cota */}
+          <div className="bg-zinc-900/40 p-5 rounded-3xl border border-zinc-800/60 space-y-3">
+            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-cyan-400" />
+              Consumo de Cotas
+            </span>
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-400">Envios no Turno Atual:</span>
+                <span className="font-mono text-cyan-300 font-bold">
+                  {campaign.currentSlotCount || 0} envios
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-400">Envios Hoje:</span>
+                <span className="font-mono text-zinc-200 font-semibold">
+                  {campaign.todayCount || 0} / {campaign.dailyLimit || '∞'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-400">Pré-validação WhatsApp:</span>
+                <span className="text-emerald-400 font-bold">
+                  {campaign.validateWhatsApp !== false ? 'Ativa' : 'Desativada'}
+                </span>
+              </div>
+            </div>
+          </div>
 
-          {isEditable && (
-            <button 
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black px-6 py-2.5 rounded-xl font-bold transition-all disabled:opacity-50 text-sm"
-            >
-              <Save className="w-4 h-4" />
-              {saving ? 'Salvando...' : 'Salvar'}
-            </button>
-          )}
-
-          <button 
-            onClick={handleDelete}
-            className="flex items-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-4 py-2.5 rounded-xl font-bold transition-all text-sm"
-          >
-            <Trash2 className="w-4 h-4" />
-            Excluir
-          </button>
+          {/* Card: Copy / Template */}
+          <div className="bg-zinc-900/40 p-5 rounded-3xl border border-zinc-800/60 space-y-3">
+            <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center justify-between">
+              <span>Mensagem Configurada</span>
+              {isEditable && (
+                <button
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <Edit3 className="w-3 h-3" /> Editar
+                </button>
+              )}
+            </span>
+            <p className="text-xs text-zinc-300 whitespace-pre-wrap line-clamp-4 font-mono bg-black/40 p-2.5 rounded-xl border border-zinc-800">
+              {campaign.messageTemplate || '(Sem texto configurado)'}
+            </p>
+          </div>
         </div>
-      </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        {/* Left Col: Config & Edit */}
-        <div className="lg:col-span-4 flex flex-col space-y-6">
-          <div className="bg-zinc-900/40 p-6 rounded-3xl border border-zinc-800/60 shadow-xl">
-            <h2 className="text-lg font-semibold flex items-center gap-2 text-zinc-100 mb-6">
-              <Settings className="w-5 h-5 text-emerald-400" />
-              Configurações
+        {/* Tabela de Destinatários com Filtro e Busca */}
+        <div className="bg-zinc-900/40 rounded-3xl border border-zinc-800/60 shadow-2xl overflow-hidden space-y-4 p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <Users className="w-4 h-4 text-emerald-400" />
+              Relatório de Destinatários ({filteredContacts.length} exibidos)
             </h2>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Barra de Busca */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-zinc-500" />
+                <input
+                  type="text"
+                  placeholder="Buscar número ou nome..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="bg-black/50 border border-zinc-700/60 rounded-xl pl-8 pr-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+
+              {/* Filtro de Status */}
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="bg-black/50 border border-zinc-700/60 rounded-xl px-3 py-1.5 text-xs text-zinc-200 focus:outline-none cursor-pointer"
+              >
+                <option value="all">Todos os Status</option>
+                <option value="sent">Enviados</option>
+                <option value="pending">Pendentes</option>
+                <option value="no_whatsapp">Sem WhatsApp</option>
+                <option value="failed">Falhas</option>
+                <option value="skipped">Ignorados</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border border-zinc-800 max-h-[550px] overflow-y-auto">
+            <table className="w-full text-left text-xs text-zinc-300">
+              <thead className="bg-zinc-900 text-zinc-400 uppercase text-[10px] sticky top-0">
+                <tr>
+                  <th className="px-4 py-3">Contato</th>
+                  <th className="px-4 py-3">Telefone Normalizado</th>
+                  <th className="px-4 py-3">Grupo</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Detalhe / Erro</th>
+                  <th className="px-4 py-3 text-right">Data/Hora Envio</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/60 bg-black/40">
+                {filteredContacts.map((c) => (
+                  <tr key={c.id} className="hover:bg-zinc-800/20">
+                    <td className="px-4 py-3">
+                      <span className="font-semibold text-white block">
+                        {c.name || <span className="text-zinc-600 font-normal">(sem nome)</span>}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-emerald-400 font-semibold">
+                      {c.normalizedPhone || c.number}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[11px] text-zinc-500">
+                      {c.contactGroupKey ? (
+                        <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono">
+                          {c.contactGroupKey}
+                        </span>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {c.status === 'sent' && (
+                        <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold">
+                          <CheckCircle2 className="w-3 h-3" /> Enviado
+                        </span>
+                      )}
+                      {c.status === 'pending' && (
+                        <span className="inline-flex items-center gap-1 text-zinc-400">
+                          <Clock className="w-3 h-3" /> Pendente
+                        </span>
+                      )}
+                      {c.status === 'processing' && (
+                        <span className="inline-flex items-center gap-1 text-amber-400 animate-pulse">
+                          <RefreshCw className="w-3 h-3 animate-spin" /> Disparando...
+                        </span>
+                      )}
+                      {c.status === 'no_whatsapp' && (
+                        <span className="inline-flex items-center gap-1 text-amber-400 font-semibold">
+                          <Smartphone className="w-3 h-3" /> Sem WhatsApp
+                        </span>
+                      )}
+                      {c.status === 'failed' && (
+                        <span className="inline-flex items-center gap-1 text-red-400 font-semibold">
+                          <XCircle className="w-3 h-3" /> Falha
+                        </span>
+                      )}
+                      {(c.status === 'skipped_group_done' || c.status === 'skipped_duplicate') && (
+                        <span className="inline-flex items-center gap-1 text-purple-400 font-semibold">
+                          <ShieldCheck className="w-3 h-3" /> Ignorado
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-zinc-400 text-[11px] max-w-xs truncate">
+                      {c.error || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-zinc-400 text-[11px]">
+                      {c.sentAt ? new Date(c.sentAt).toLocaleString('pt-BR') : '-'}
+                    </td>
+                  </tr>
+                ))}
+                {filteredContacts.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="text-center py-8 text-zinc-500">
+                      Nenhum contato encontrado para este filtro.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Modal de Edição Rápida */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl max-w-2xl w-full p-6 space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-emerald-400" />
+                Edição Rápida da Campanha
+              </h3>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="text-zinc-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
 
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-semibold text-zinc-400 block mb-2">Nome da Campanha</label>
-                <input 
-                  type="text" 
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  disabled={!isEditable}
-                  className="w-full bg-black/50 border border-zinc-700/50 rounded-xl p-3 text-sm text-zinc-200 disabled:opacity-50"
+                <label className="text-xs font-semibold text-zinc-400 block mb-1.5">
+                  Nome da Campanha
+                </label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full bg-black/60 border border-zinc-700/60 rounded-xl p-3 text-sm text-zinc-200"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-400 block mb-2">Data de Agendamento</label>
-                <input 
-                  type="datetime-local" 
-                  value={scheduledAt}
-                  onChange={e => setScheduledAt(e.target.value)}
-                  disabled={!isEditable}
-                  className="w-full bg-black/50 border border-zinc-700/50 rounded-xl p-3 text-sm text-zinc-200 disabled:opacity-50"
+                <label className="text-xs font-semibold text-zinc-400 block mb-1.5">
+                  Texto da Mensagem (com suporte a variáveis e Spintax)
+                </label>
+                <textarea
+                  rows={5}
+                  value={editTemplate}
+                  onChange={(e) => setEditTemplate(e.target.value)}
+                  className="w-full bg-black/60 border border-zinc-700/60 rounded-xl p-3 text-sm text-zinc-200 leading-relaxed font-sans"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-zinc-400 block mb-2">Mensagem ({campaign.messageMode})</label>
-                <textarea 
-                  value={messageTemplate}
-                  onChange={e => setMessageTemplate(e.target.value)}
-                  disabled={!isEditable}
-                  rows={4}
-                  className="w-full bg-black/50 border border-zinc-700/50 rounded-xl p-3 text-sm text-zinc-200 disabled:opacity-50"
+                <label className="text-xs font-semibold text-zinc-400 block mb-1.5">
+                  URL da Mídia (Imagem, Vídeo ou Áudio)
+                </label>
+                <input
+                  type="text"
+                  value={editMediaUrl}
+                  onChange={(e) => setEditMediaUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full bg-black/60 border border-zinc-700/60 rounded-xl p-3 text-sm text-zinc-200"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-zinc-800">
-                <div>
-                  <label className="text-xs text-zinc-500 block mb-1">Delay Mín. (s)</label>
-                  <input type="number" value={delayMin} onChange={e => setDelayMin(Number(e.target.value))} disabled={!isEditable} className="w-full bg-black/50 border border-zinc-800 rounded-lg p-2 text-sm text-zinc-300 disabled:opacity-50"/>
+              {/* Editor de Janelas de Horário na Modal */}
+              <div className="space-y-2 pt-2 border-t border-zinc-800">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                    Janelas de Horário e Cota por Janela
+                  </span>
+                  <button
+                    type="button"
+                    onClick={addEditWindow}
+                    className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Adicionar Janela
+                  </button>
                 </div>
-                <div>
-                  <label className="text-xs text-zinc-500 block mb-1">Delay Máx. (s)</label>
-                  <input type="number" value={delayMax} onChange={e => setDelayMax(Number(e.target.value))} disabled={!isEditable} className="w-full bg-black/50 border border-zinc-800 rounded-lg p-2 text-sm text-zinc-300 disabled:opacity-50"/>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Right Col: Stats & Logs */}
-        <div className="lg:col-span-8 flex flex-col space-y-6">
-          
-          {/* Stats Grid */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-zinc-900/40 p-5 rounded-2xl border border-zinc-800/60">
-              <p className="text-xs text-zinc-500 font-bold mb-1 uppercase">Total</p>
-              <p className="text-2xl font-light text-white">{campaign.total}</p>
-            </div>
-            <div className="bg-zinc-900/40 p-5 rounded-2xl border border-emerald-500/20">
-              <p className="text-xs text-emerald-500 font-bold mb-1 uppercase">Enviados</p>
-              <p className="text-2xl font-light text-emerald-400">{campaign.sent}</p>
-            </div>
-            <div className="bg-zinc-900/40 p-5 rounded-2xl border border-red-500/20">
-              <p className="text-xs text-red-500 font-bold mb-1 uppercase">Falhas</p>
-              <p className="text-2xl font-light text-red-400">{campaign.failed}</p>
-            </div>
-          </div>
-
-          {/* Logs */}
-          <div className="bg-zinc-900/40 rounded-3xl border border-zinc-800/60 shadow-xl overflow-hidden flex-1">
-            <div className="p-6 border-b border-zinc-800/60 bg-black/40 flex justify-between items-center">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Users className="w-5 h-5 text-emerald-400" /> Relatório de Contatos
-              </h2>
-            </div>
-            
-            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-              <table className="w-full text-left text-sm text-zinc-400">
-                <thead className="text-xs uppercase bg-zinc-900/80 text-zinc-500 sticky top-0">
-                  <tr>
-                    <th className="px-6 py-4 font-semibold">Contato</th>
-                    <th className="px-6 py-4 font-semibold">Status</th>
-                    <th className="px-6 py-4 font-semibold text-right">Data/Hora</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-800/40">
-                  {contacts.map((c) => (
-                    <tr key={c.id} className="hover:bg-zinc-800/20">
-                      <td className="px-6 py-4">
-                        <p className="font-bold text-zinc-200">{c.number}</p>
-                        {c.name && <p className="text-xs text-zinc-500 mt-0.5">{c.name}</p>}
-                      </td>
-                      <td className="px-6 py-4">
-                        {c.status === 'pending' && <span className="text-zinc-500 text-xs flex items-center gap-1"><Clock className="w-3 h-3"/> Pendente</span>}
-                        {c.status === 'sent' && <span className="text-emerald-400 text-xs flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> Enviado</span>}
-                        {c.status === 'failed' && (
-                          <div>
-                            <span className="text-red-400 text-xs flex items-center gap-1"><XCircle className="w-3 h-3"/> Falha</span>
-                            <span className="text-[10px] text-red-500/70 block mt-1">{c.error}</span>
-                          </div>
-                        )}
-                        {(c.status === 'checking' || c.status === 'typing' || c.status === 'recording') && (
-                          <span className="text-amber-400 text-xs flex items-center gap-1 animate-pulse"><PlayCircle className="w-3 h-3"/> Processando...</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-right text-zinc-500 text-xs font-mono">
-                        {c.sentAt ? new Date(c.sentAt).toLocaleString('pt-BR') : '-'}
-                      </td>
-                    </tr>
+                <div className="space-y-2 max-h-36 overflow-y-auto">
+                  {editWindows.map((win, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center gap-2 p-2 bg-black/40 rounded-xl border border-zinc-800 text-xs"
+                    >
+                      <span className="text-zinc-500 font-bold">#{idx + 1}</span>
+                      <input
+                        type="time"
+                        value={win.start}
+                        onChange={(e) => updateEditWindow(idx, { start: e.target.value })}
+                        className="bg-zinc-800 rounded px-2 py-1 text-white border border-zinc-700"
+                      />
+                      <span className="text-zinc-500">até</span>
+                      <input
+                        type="time"
+                        value={win.end}
+                        onChange={(e) => updateEditWindow(idx, { end: e.target.value })}
+                        className="bg-zinc-800 rounded px-2 py-1 text-white border border-zinc-700"
+                      />
+                      <span className="text-zinc-500 ml-auto">Cota:</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={win.limit}
+                        onChange={(e) => updateEditWindow(idx, { limit: Number(e.target.value) || 1 })}
+                        className="w-14 bg-zinc-800 rounded px-2 py-1 text-white text-center border border-zinc-700 font-bold"
+                      />
+                      {editWindows.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeEditWindow(idx)}
+                          className="text-zinc-500 hover:text-red-400 ml-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 pt-2 border-t border-zinc-800">
+                <div>
+                  <label className="text-xs font-semibold text-zinc-400 block mb-1">
+                    Delay Mín (s)
+                  </label>
+                  <input
+                    type="number"
+                    value={editDelayMin}
+                    onChange={(e) => setEditDelayMin(Number(e.target.value))}
+                    className="w-full bg-black/60 border border-zinc-700/60 rounded-xl p-2.5 text-sm text-zinc-200"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-400 block mb-1">
+                    Delay Máx (s)
+                  </label>
+                  <input
+                    type="number"
+                    value={editDelayMax}
+                    onChange={(e) => setEditDelayMax(Number(e.target.value))}
+                    className="w-full bg-black/60 border border-zinc-700/60 rounded-xl p-2.5 text-sm text-zinc-200"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-400 block mb-1">
+                    Limite Diário
+                  </label>
+                  <input
+                    type="number"
+                    value={editDailyLimit}
+                    onChange={(e) => setEditDailyLimit(Number(e.target.value))}
+                    className="w-full bg-black/60 border border-zinc-700/60 rounded-xl p-2.5 text-sm text-zinc-200"
+                  />
+                </div>
+              </div>
+
+              {/* Toggles Anti-ban */}
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={editValidateWhatsApp}
+                    onChange={(e) => setEditValidateWhatsApp(e.target.checked)}
+                    className="rounded border-zinc-700 text-emerald-500 focus:ring-0"
+                  />
+                  <span>Pré-validação de WhatsApp</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={editStopGroup}
+                    onChange={(e) => setEditStopGroup(e.target.checked)}
+                    className="rounded border-zinc-700 text-emerald-500 focus:ring-0"
+                  />
+                  <span>Parar grupo no primeiro sucesso</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(false)}
+                className="px-5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSavePatch}
+                disabled={saving}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs cursor-pointer shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                {saving ? 'Salvando...' : 'Salvar Alterações'}
+              </button>
             </div>
           </div>
-
         </div>
-      </div>
+      )}
+
     </div>
   );
 }

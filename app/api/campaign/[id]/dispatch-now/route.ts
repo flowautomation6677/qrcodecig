@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/src/lib/prisma';
-import { campaignQueue } from '@/src/lib/queue';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
@@ -22,31 +23,21 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       return NextResponse.json({ error: 'Campanha não possui contatos pendentes para envio' }, { status: 400 });
     }
 
-    // Atualiza status para 'pending' e zera agendamento futuro
+    // Força execução imediata zerando agendamentos e marcando como running
     await prisma.campaign.update({
       where: { id: params.id },
       data: {
-        status: 'pending',
+        status: 'running',
+        pauseReason: null,
         scheduledAt: null,
-      },
+        nextDispatchAt: new Date(),
+      } as any,
     });
-
-    // Enfileira imediatamente sem nenhum delay
-    await campaignQueue.add(
-      'start-campaign',
-      { campaignId: campaign.id },
-      {
-        delay: 0,
-        jobId: `force-${campaign.id}-${Date.now()}`,
-        removeOnComplete: true,
-        removeOnFail: true,
-      }
-    );
 
     return NextResponse.json({
       success: true,
-      message: 'Disparo imediato enfileirado com sucesso!',
-      status: 'pending',
+      message: 'Disparo forçado para início imediato no próximo ciclo do worker!',
+      status: 'running',
     });
   } catch (error: any) {
     console.error('Erro ao forçar disparo imediato:', error);
