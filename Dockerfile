@@ -1,10 +1,13 @@
 FROM node:20-alpine
 
+# Pacotes essenciais para Prisma e Node no Alpine Linux
+RUN apk add --no-cache libc6-compat openssl
+
 WORKDIR /app
 
-# Instala dependências
+# Instala dependências com tolerância a peer dependencies
 COPY package.json package-lock.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Copia o código-fonte
 COPY . .
