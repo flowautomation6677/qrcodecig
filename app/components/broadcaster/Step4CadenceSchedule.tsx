@@ -257,6 +257,14 @@ export default function Step4CadenceSchedule({
               );
             })}
           </div>
+          {!formData.allowedDays.includes(new Date().getDay()) && (
+            <p className="text-[11px] text-amber-400/90 flex items-center gap-1.5 mt-1 bg-amber-500/10 p-2 rounded-xl border border-amber-500/20">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                Hoje ({['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'][new Date().getDay()]}) não está selecionado. Se deseja que os disparos comecem hoje, marque o botão acima.
+              </span>
+            </p>
+          )}
         </div>
 
         {/* Lista de Janelas de Horário */}

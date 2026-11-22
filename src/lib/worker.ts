@@ -422,7 +422,12 @@ async function processCampaignStep(campaignId: string) {
     const metaToken = campaign.client?.metaAccessToken;
 
     const headerType = campaign.messageMode === 'video' ? 'video' : campaign.messageMode === 'image' ? 'image' : undefined;
-    const headerUrl = campaign.mediaUrl || undefined;
+    let headerUrl = campaign.mediaUrl || undefined;
+
+    // Se o template for template_kelly e não houver headerUrl explícito, usa a URL do vídeo aprovado na Meta
+    if (headerType === 'video' && !headerUrl && (campaign.metaTemplateName === 'template_kelly' || !campaign.metaTemplateName)) {
+      headerUrl = 'https://scontent.whatsapp.net/v/t61.29466-34/700404075_2385443468889539_3789738473270518965_n.mp4?ccb=1-7&_nc_sid=8b1bef&_nc_ohc=WTBk59yBGdwQ7kNvwFsY8ca&_nc_oc=AdrTyvEn04JQWag3YjIT17cSORX5cGVbXT5KCxtXIQwYAu6QeA7FFEV_A3SPZv8cqUAs9mSYi3qRUrSaTAbP8mCI&_nc_zt=28&_nc_ht=scontent.whatsapp.net&edm=AH51TzQEAAAA&_nc_gid=NcKEOw7u_JfDND5AtZoKdw&_nc_tpa=Q5bMBQK16OYXTnnZzFUJNsvny8rAec4MMxcDUq4sTkwElkJrcl4D5NPxW_rEyR9lsp1qD8SddOBQuL-kWA&oh=01_Q5Aa6AFMXaaZ2RTYpkHr0nMz66bnPgGcTNSjlyefhbX-EwGr_A&oe=6B2A6992';
+    }
 
     let bodyParameters: string[] = [];
     if (campaign.metaTemplateComponents) {
@@ -441,7 +446,7 @@ async function processCampaignStep(campaignId: string) {
             return extraVariables[paramKey] || '';
           });
         }
-      } catch {}
+      } catch { }
     }
 
     sendResult = await sendMetaTemplateMessage({

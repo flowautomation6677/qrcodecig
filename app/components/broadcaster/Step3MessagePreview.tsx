@@ -227,13 +227,16 @@ export default function Step3MessagePreview({ formData, updateFormData, onNext, 
 
     const bodyComp = tpl.components?.find((c: any) => c.type === 'BODY');
     const headerComp = tpl.components?.find((c: any) => c.type === 'HEADER');
+    const exampleMediaUrl = headerComp?.example?.header_handle?.[0] || '';
 
     updateFormData({
       metaTemplateName: tpl.name,
       metaTemplateLanguage: tpl.language || 'pt_BR',
       messageTemplate: bodyComp?.text || formData.messageTemplate,
-      messageMode: headerComp?.format?.toLowerCase() === 'video' ? 'video' : 'text',
+      messageMode: headerComp?.format?.toLowerCase() === 'video' ? 'video' : headerComp?.format?.toLowerCase() === 'image' ? 'image' : 'text',
       metaHeaderType: headerComp?.format?.toLowerCase() || 'none',
+      metaHeaderUrl: formData.metaHeaderUrl || exampleMediaUrl,
+      mediaUrl: formData.mediaUrl || exampleMediaUrl,
     });
   };
 

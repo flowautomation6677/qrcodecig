@@ -12,9 +12,9 @@ export interface MetaCredentials {
 export interface MetaTemplateComponentParam {
   type: 'text' | 'image' | 'video' | 'document';
   text?: string;
-  image?: { link: string };
-  video?: { link: string };
-  document?: { link: string; filename?: string };
+  image?: { link?: string; id?: string };
+  video?: { link?: string; id?: string };
+  document?: { link?: string; id?: string; filename?: string };
 }
 
 export interface MetaTemplateComponent {
@@ -157,20 +157,21 @@ export async function sendMetaTemplateMessage(options: SendMetaTemplateOptions):
 
     // 1. Componente de Cabeçalho (Header Media / Text)
     if (headerType && headerUrl) {
+      const isMediaId = /^\d+$/.test(headerUrl.trim());
       if (headerType === 'video') {
         components.push({
           type: 'header',
-          parameters: [{ type: 'video', video: { link: headerUrl } }],
+          parameters: [{ type: 'video', video: isMediaId ? { id: headerUrl.trim() } : { link: headerUrl } }],
         });
       } else if (headerType === 'image') {
         components.push({
           type: 'header',
-          parameters: [{ type: 'image', image: { link: headerUrl } }],
+          parameters: [{ type: 'image', image: isMediaId ? { id: headerUrl.trim() } : { link: headerUrl } }],
         });
       } else if (headerType === 'document') {
         components.push({
           type: 'header',
-          parameters: [{ type: 'document', document: { link: headerUrl } }],
+          parameters: [{ type: 'document', document: isMediaId ? { id: headerUrl.trim() } : { link: headerUrl } }],
         });
       } else if (headerType === 'text') {
         components.push({

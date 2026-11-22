@@ -25,6 +25,7 @@ import {
   Zap,
   ShieldCheck,
   Radio,
+  Sliders,
 } from 'lucide-react';
 
 interface ClientItem {
@@ -37,6 +38,7 @@ interface ClientItem {
   provider?: 'evolution' | 'meta_official';
   metaPhoneNumberId?: string | null;
   metaWabaId?: string | null;
+  metaAccessToken?: string | null;
   _count?: {
     campaigns: number;
   };
@@ -73,6 +75,89 @@ export default function ClientsPage() {
 
   const [creating, setCreating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Modal / Edição de Cliente & Credenciais Meta
+  const [editModalClient, setEditModalClient] = useState<ClientItem | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editProvider, setEditProvider] = useState<'evolution' | 'meta_official'>('evolution');
+  const [editMetaPhoneId, setEditMetaPhoneId] = useState('');
+  const [editMetaWabaId, setEditMetaWabaId] = useState('');
+  const [editMetaToken, setEditMetaToken] = useState('');
+  const [testingEditMeta, setTestingEditMeta] = useState(false);
+  const [editMetaSuccess, setEditMetaSuccess] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const openEditModal = (client: ClientItem) => {
+    setEditModalClient(client);
+    setEditName(client.name);
+    setEditProvider(client.provider || 'evolution');
+    setEditMetaPhoneId(client.metaPhoneNumberId || '');
+    setEditMetaWabaId(client.metaWabaId || '');
+    setEditMetaToken(client.metaAccessToken || '');
+    setEditError(null);
+    setEditMetaSuccess(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editModalClient) return;
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      const res = await fetch(`/api/clients/${editModalClient.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editName,
+          provider: editProvider,
+          metaPhoneNumberId: editMetaPhoneId,
+          metaWabaId: editMetaWabaId,
+          metaAccessToken: editMetaToken,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEditError(data.error || 'Erro ao salvar alterações');
+        return;
+      }
+      setEditModalClient(null);
+      fetchClients();
+    } catch (err: any) {
+      setEditError(err.message || 'Erro de rede ao salvar');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleTestEditMeta = async () => {
+    if (!editMetaPhoneId || !editMetaToken) {
+      setEditError('Informe o Phone Number ID e o Access Token para testar.');
+      return;
+    }
+    setTestingEditMeta(true);
+    setEditError(null);
+    setEditMetaSuccess(null);
+    try {
+      const res = await fetch('/api/clients/test-meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumberId: editMetaPhoneId,
+          accessToken: editMetaToken,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setEditMetaSuccess(`Conexão confirmada! Linha: ${data.verifiedName || data.displayPhoneNumber || 'Meta Oficial'}`);
+      } else {
+        setEditError(data.error || 'Credenciais inválidas na Meta');
+      }
+    } catch (err: any) {
+      setEditError(err.message || 'Falha ao testar conexão com a Meta.');
+    } finally {
+      setTestingEditMeta(false);
+    }
+  };
 
   // Modal / Conexão QR Code Integrada
   const [qrModalClient, setQrModalClient] = useState<ClientItem | null>(null);
@@ -552,6 +637,15 @@ export default function ClientsPage() {
                         <span>Ver Campanhas</span>
                       </Link>
 
+                      <button
+                        onClick={() => openEditModal(client)}
+                        className="flex items-center justify-center gap-1.5 py-2 px-3 bg-zinc-800 hover:bg-zinc-700/80 text-zinc-300 rounded-xl text-xs font-semibold transition-all border border-zinc-700/60 cursor-pointer"
+                        title="Configurar credenciais e parâmetros"
+                      >
+                        <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Configurar</span>
+                      </button>
+
                       {!isMeta ? (
                         <button
                           onClick={() => setQrModalClient(client)}
@@ -671,6 +765,14 @@ export default function ClientsPage() {
                     >
                       <ExternalLink className="w-4 h-4" />
                     </a>
+
+                    <button
+                      onClick={() => openEditModal(client)}
+                      className="p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl transition-colors border border-zinc-700/60 cursor-pointer"
+                      title="Configurar credenciais"
+                    >
+                      <Sliders className="w-4 h-4 text-cyan-400" />
+                    </button>
 
                     <button
                       onClick={() => handleDeleteClient(client.id, client.name)}
@@ -1004,6 +1106,194 @@ export default function ClientsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: CONFIGURAÇÃO / EDIÇÃO DE CLIENTE & CREDENCIAIS META */}
+      {editModalClient && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative">
+            <button
+              onClick={() => setEditModalClient(null)}
+              className="absolute top-5 right-5 p-2 text-zinc-400 hover:text-white rounded-xl bg-zinc-800/60 hover:bg-zinc-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h2 className="text-xl font-bold text-white mb-1">Configurar Cliente</h2>
+            <p className="text-xs text-zinc-400 mb-5">
+              Edite as credenciais e parâmetros de envio deste cliente.
+            </p>
+
+            {/* Seletor de Tipo de Provedor */}
+            <div className="grid grid-cols-2 gap-2 p-1 bg-black/60 rounded-2xl border border-zinc-800 mb-5">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditProvider('evolution');
+                  setEditError(null);
+                  setEditMetaSuccess(null);
+                }}
+                className={`flex flex-col items-center justify-center py-3 px-3 rounded-xl transition-all cursor-pointer ${
+                  editProvider === 'evolution'
+                    ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20 font-bold'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 text-xs font-bold">
+                  <Smartphone className="w-4 h-4" />
+                  <span>Chip / QR Code</span>
+                </div>
+                <span className="text-[10px] opacity-80 mt-0.5">Evolution API</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEditProvider('meta_official');
+                  setEditError(null);
+                  setEditMetaSuccess(null);
+                }}
+                className={`flex flex-col items-center justify-center py-3 px-3 rounded-xl transition-all cursor-pointer ${
+                  editProvider === 'meta_official'
+                    ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/20 font-bold'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 text-xs font-bold">
+                  <Zap className="w-4 h-4" />
+                  <span>API Oficial Meta</span>
+                </div>
+                <span className="text-[10px] opacity-80 mt-0.5">Cloud API v21.0</span>
+              </button>
+            </div>
+
+            {editError && (
+              <div className="mb-4 p-3.5 bg-red-950/40 border border-red-800/60 rounded-xl text-xs text-red-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{editError}</span>
+              </div>
+            )}
+
+            {editMetaSuccess && (
+              <div className="mb-4 p-3.5 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-xs text-emerald-300 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{editMetaSuccess}</span>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-zinc-300 uppercase mb-1.5">
+                  Nome do Cliente
+                </label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 focus:border-emerald-500 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-colors"
+                />
+              </div>
+
+              {editProvider === 'meta_official' ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-300 uppercase mb-1.5">
+                      Phone Number ID da Meta
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 849870041539834"
+                      value={editMetaPhoneId}
+                      onChange={(e) => setEditMetaPhoneId(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-cyan-500 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-colors font-mono text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-300 uppercase mb-1.5">
+                      WABA ID (WhatsApp Business Account ID)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 2671775253166341"
+                      value={editMetaWabaId}
+                      onChange={(e) => setEditMetaWabaId(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-cyan-500 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-colors font-mono text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-300 uppercase mb-1.5">
+                      Access Token Permanente de Sistema
+                    </label>
+                    <textarea
+                      rows={3}
+                      placeholder="EAAq2T9..."
+                      value={editMetaToken}
+                      onChange={(e) => setEditMetaToken(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 focus:border-cyan-500 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none transition-colors font-mono break-all"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleTestEditMeta}
+                    disabled={testingEditMeta}
+                    className="w-full py-2.5 px-3 bg-zinc-800 hover:bg-zinc-700 text-cyan-300 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all border border-cyan-800/40 cursor-pointer disabled:opacity-50"
+                  >
+                    <Zap className={`w-3.5 h-3.5 ${testingEditMeta ? 'animate-spin' : ''}`} />
+                    <span>{testingEditMeta ? 'Validando na Meta...' : 'Testar Conexão com a Meta Agora'}</span>
+                  </button>
+                </>
+              ) : (
+                <div className="p-3.5 bg-zinc-950/60 border border-zinc-800 rounded-2xl text-xs text-zinc-400">
+                  <p className="font-semibold text-zinc-200 mb-1 flex items-center gap-1.5">
+                    <Smartphone className="w-4 h-4 text-emerald-400" />
+                    Conexão por Chip (Evolution API)
+                  </p>
+                  <p>
+                    Instância ativa:{' '}
+                    <strong className="text-white font-mono">{editModalClient.instanceName}</strong>.
+                    Você pode conectar ou re-parear o WhatsApp deste cliente clicando em "Reconectar / QR" no card.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setEditModalClient(null)}
+                  disabled={savingEdit}
+                  className="px-4 py-2.5 text-xs text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  disabled={savingEdit}
+                  className={`flex items-center gap-2 ${
+                    editProvider === 'meta_official'
+                      ? 'bg-gradient-to-r from-cyan-400 to-teal-300 hover:from-cyan-300 hover:to-teal-200 shadow-[0_0_20px_rgba(6,182,212,0.3)]'
+                      : 'bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 shadow-[0_0_20px_rgba(16,185,129,0.3)]'
+                  } text-black px-5 py-2.5 rounded-xl font-bold text-xs transition-all disabled:opacity-50 cursor-pointer`}
+                >
+                  {savingEdit ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Salvar Alterações
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

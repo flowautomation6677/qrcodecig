@@ -35,6 +35,7 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
   const [editDelayMax, setEditDelayMax] = useState(240);
   const [editDailyLimit, setEditDailyLimit] = useState(24);
   const [editWindows, setEditWindows] = useState<TimeWindow[]>([]);
+  const [editAllowedDays, setEditAllowedDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [editValidateWhatsApp, setEditValidateWhatsApp] = useState(true);
   const [editStopGroup, setEditStopGroup] = useState(true);
 
@@ -75,6 +76,15 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
           } catch {
             setEditWindows([]);
           }
+
+          try {
+            const parsedDays = typeof data.campaign.allowedDays === 'string'
+              ? JSON.parse(data.campaign.allowedDays)
+              : data.campaign.allowedDays || [1, 2, 3, 4, 5];
+            setEditAllowedDays(parsedDays);
+          } catch {
+            setEditAllowedDays([1, 2, 3, 4, 5]);
+          }
         }
       }
     } catch (err) {
@@ -111,6 +121,7 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
           delayMax: editDelayMax,
           dailyLimit: editDailyLimit,
           windowsJson: editWindows,
+          allowedDays: editAllowedDays,
           validateWhatsApp: editValidateWhatsApp,
           stopGroupOnSuccess: editStopGroup,
         }),
@@ -419,6 +430,43 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
           </div>
         )}
 
+        {/* Alerta explicativo se aguardando próxima janela de horário/dia */}
+        {campaign.status === 'waiting_next_window' && (
+          <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <Clock className="w-5 h-5 shrink-0 text-cyan-400 mt-0.5" />
+              <div>
+                <p className="font-bold text-sm text-cyan-200">
+                  Campanha em Pausa Automática de Segurança (Anti-ban)
+                </p>
+                <p className="text-zinc-300 mt-1">
+                  <strong>Status do Agendador:</strong> {campaign.pauseReason || 'Aguardando próxima janela permitida de horário ou dia da semana'}.
+                </p>
+                {campaign.nextDispatchAt && (
+                  <p className="text-cyan-400 font-mono text-[11px] mt-1">
+                    Próxima abertura automática: {new Date(campaign.nextDispatchAt).toLocaleString('pt-BR')}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setIsEditModalOpen(true)}
+                className="px-3.5 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/30 font-semibold text-xs transition-all cursor-pointer"
+              >
+                Ajustar Dias / Horários
+              </button>
+              <button
+                onClick={handleDispatchNow}
+                disabled={dispatching}
+                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition-all cursor-pointer shadow-lg shadow-emerald-500/20"
+              >
+                Disparar Agora
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Cartões de Contadores Reais por Status */}
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
           <div className="bg-zinc-900/40 p-4 rounded-2xl border border-zinc-800">
@@ -722,6 +770,47 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
                   placeholder="https://..."
                   className="w-full bg-black/60 border border-zinc-700/60 rounded-xl p-3 text-sm text-zinc-200"
                 />
+              </div>
+
+              {/* Editor de Dias da Semana Permitidos */}
+              <div className="space-y-2 pt-2 border-t border-zinc-800">
+                <label className="text-xs font-semibold text-zinc-300 block">
+                  Dias da Semana Permitidos para Disparos
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: 1, label: 'Seg' },
+                    { id: 2, label: 'Ter' },
+                    { id: 3, label: 'Qua' },
+                    { id: 4, label: 'Qui' },
+                    { id: 5, label: 'Sex' },
+                    { id: 6, label: 'Sáb' },
+                    { id: 0, label: 'Dom' },
+                  ].map((d) => {
+                    const isSelected = editAllowedDays.includes(d.id);
+                    return (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => {
+                          if (isSelected) {
+                            if (editAllowedDays.length === 1) return;
+                            setEditAllowedDays(editAllowedDays.filter((x) => x !== d.id));
+                          } else {
+                            setEditAllowedDays([...editAllowedDays, d.id].sort((a, b) => a - b));
+                          }
+                        }}
+                        className={`w-12 h-9 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                          isSelected
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm'
+                            : 'bg-black/40 text-zinc-500 border-zinc-800 hover:text-white'
+                        }`}
+                      >
+                        {d.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Editor de Janelas de Horário na Modal */}

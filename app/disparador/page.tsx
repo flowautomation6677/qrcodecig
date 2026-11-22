@@ -19,6 +19,8 @@ interface Campaign {
   id: string;
   name: string;
   status: string;
+  pauseReason?: string | null;
+  nextDispatchAt?: string | null;
   instanceName: string;
   scheduledAt: string | null;
   createdAt: string;
@@ -366,9 +368,24 @@ export default function DashboardPage() {
                         </span>
                       )}
                       {camp.status === 'waiting_next_window' && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                          <Clock className="w-3.5 h-3.5" /> Próxima Janela
-                        </span>
+                        <div>
+                          <span
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
+                            title={camp.pauseReason || 'Aguardando próxima janela permitida'}
+                          >
+                            <Clock className="w-3.5 h-3.5" /> Próxima Janela
+                          </span>
+                          {camp.pauseReason && (
+                            <p className="text-[11px] text-zinc-400 mt-1 max-w-[200px] leading-tight" title={camp.pauseReason}>
+                              {camp.pauseReason}
+                            </p>
+                          )}
+                          {camp.nextDispatchAt && (
+                            <p className="text-[10px] text-cyan-400/80 font-mono mt-0.5">
+                              Retoma: {new Date(camp.nextDispatchAt).toLocaleDateString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          )}
+                        </div>
                       )}
                       {camp.status === 'paused' && (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
