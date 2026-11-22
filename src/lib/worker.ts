@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import { prisma, pool } from './prisma';
+import { prisma, pool, ensureDatabaseSchema } from './prisma';
 import { renderTemplate } from './template';
 import { evaluateSchedule, WindowConfig, ScheduleConfig } from './schedule';
 
@@ -156,19 +156,19 @@ async function sendToEvolution(payload: {
       const body =
         isPtt !== false
           ? {
-              number,
-              audio: audioData,
-              options: { delay: 0, presence: 'recording', encoding: true },
-              audioMessage: { audio: audioData },
-            }
+            number,
+            audio: audioData,
+            options: { delay: 0, presence: 'recording', encoding: true },
+            audioMessage: { audio: audioData },
+          }
           : {
-              number,
-              mediatype: 'audio',
-              media: audioData,
-              fileName: fileName || 'audio.ogg',
-              options: { delay: 0, presence: 'recording' },
-              mediaMessage: { mediatype: 'audio', media: audioData, fileName: fileName || 'audio.ogg' },
-            };
+            number,
+            mediatype: 'audio',
+            media: audioData,
+            fileName: fileName || 'audio.ogg',
+            options: { delay: 0, presence: 'recording' },
+            mediaMessage: { mediatype: 'audio', media: audioData, fileName: fileName || 'audio.ogg' },
+          };
 
       const res = await fetch(`${apiUrl}/message/${endpoint}/${encodeURIComponent(instance)}`, {
         method: 'POST',
@@ -244,14 +244,14 @@ async function processCampaignStep(campaignId: string) {
     if (campaign.windowsJson) {
       parsedWindows = JSON.parse(campaign.windowsJson);
     }
-  } catch {}
+  } catch { }
 
   let parsedAllowedDays = [1, 2, 3, 4, 5];
   try {
     if (campaign.allowedDays) {
       parsedAllowedDays = JSON.parse(campaign.allowedDays);
     }
-  } catch {}
+  } catch { }
 
   const scheduleConfig: ScheduleConfig = {
     timezone: campaign.timezone || 'America/Sao_Paulo',
@@ -381,7 +381,7 @@ async function processCampaignStep(campaignId: string) {
     if (contact.variablesJson) {
       extraVariables = JSON.parse(contact.variablesJson);
     }
-  } catch {}
+  } catch { }
 
   const finalText = renderTemplate(campaign.messageTemplate, {
     name: contact.name,
@@ -398,8 +398,8 @@ async function processCampaignStep(campaignId: string) {
   const typingDelayMs = isAudio
     ? 5000
     : isVideo
-    ? 8000
-    : Math.min(Math.max((finalText.length || 20) * 40, 2500), 10000);
+      ? 8000
+      : Math.min(Math.max((finalText.length || 20) * 40, 2500), 10000);
 
   await sendToEvolution({
     action: 'presence',
@@ -567,6 +567,8 @@ export async function startWorkerDaemon() {
   console.log('[Worker] Worker Autocontido de Campanhas Iniciado!');
   console.log('[Worker] Persistência: 100% PostgreSQL | Zero Redis');
   console.log('====================================================');
+
+  await ensureDatabaseSchema();
 
   while (isRunning) {
     await runWorkerIteration();

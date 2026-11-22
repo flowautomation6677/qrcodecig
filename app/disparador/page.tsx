@@ -47,6 +47,7 @@ export default function DashboardPage() {
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [stats, setStats] = useState({ total: 0, completed: 0, running: 0, scheduled: 0 });
   const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   // 1. Carrega lista de clientes para o filtro
   useEffect(() => {
@@ -63,12 +64,15 @@ export default function DashboardPage() {
   // 2. Carrega campanhas (com ou sem filtro de cliente)
   const fetchCampaigns = (clientId: string) => {
     setLoading(true);
+    setApiError(null);
     const url = clientId ? `/api/campaign?clientId=${encodeURIComponent(clientId)}` : '/api/campaign';
 
     fetch(url)
       .then((res) => res.json())
       .then((data) => {
-        if (data.campaigns) {
+        if (data.error) {
+          setApiError(data.error);
+        } else if (data.campaigns) {
           setCampaigns(data.campaigns);
         }
         if (data.stats) {
@@ -85,6 +89,7 @@ export default function DashboardPage() {
       })
       .catch((err) => {
         console.error('Erro ao buscar campanhas:', err);
+        setApiError(err.message || 'Erro ao carregar dados');
         setLoading(false);
       });
   };
@@ -207,6 +212,18 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {apiError && (
+        <div className="mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center justify-between">
+          <span>Erro ao carregar campanhas: {apiError}</span>
+          <button
+            onClick={() => fetchCampaigns(selectedClientId)}
+            className="underline font-bold hover:text-white ml-2"
+          >
+            Tentar Novamente
+          </button>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">

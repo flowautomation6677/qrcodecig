@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/src/lib/prisma';
+import { prisma, ensureDatabaseSchema } from '@/src/lib/prisma';
 import { normalizeBrPhone } from '@/src/lib/phone';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
+    await ensureDatabaseSchema();
+
     const { searchParams } = new URL(request.url);
     const clientId = searchParams.get('clientId');
 
@@ -71,6 +73,7 @@ export async function GET(request: Request) {
 
 export async function POST(req: Request) {
   try {
+    await ensureDatabaseSchema();
     const body = await req.json();
     const {
       name,

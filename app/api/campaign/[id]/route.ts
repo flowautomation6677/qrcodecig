@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/src/lib/prisma';
+import { prisma, ensureDatabaseSchema } from '@/src/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   try {
+    await ensureDatabaseSchema();
     const campaignId = params.id;
 
     const campaign: any = await prisma.campaign.findUnique({
