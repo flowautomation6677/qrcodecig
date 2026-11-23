@@ -267,7 +267,7 @@ async function processCampaignStep(campaignId: string) {
     }
   } catch { }
 
-  let parsedAllowedDays = [1, 2, 3, 4, 5];
+  let parsedAllowedDays = [0, 1, 2, 3, 4, 5, 6];
   try {
     if (campaign.allowedDays) {
       parsedAllowedDays = JSON.parse(campaign.allowedDays);

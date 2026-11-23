@@ -121,7 +121,7 @@ export function evaluateSchedule(
   now = new Date()
 ): ScheduleEvaluationResult {
   const timezone = config.timezone || 'America/Sao_Paulo';
-  const allowedDays = config.allowedDays && config.allowedDays.length > 0 ? config.allowedDays : [1, 2, 3, 4, 5];
+  const allowedDays = config.allowedDays && config.allowedDays.length > 0 ? config.allowedDays : [0, 1, 2, 3, 4, 5, 6];
   const windows = config.windows && config.windows.length > 0 ? config.windows : [{ start: '08:00', end: '18:00', limit: 0 }];
   const dailyLimit = config.dailyLimit || 0;
 

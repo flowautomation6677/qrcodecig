@@ -142,7 +142,7 @@ export async function POST(req: Request) {
         batchSize: Number(batchSize) || 40,
         batchPause: Number(batchPause) || 10,
         timezone: timezone || 'America/Sao_Paulo',
-        allowedDays: typeof allowedDays === 'string' ? allowedDays : JSON.stringify(allowedDays || [1, 2, 3, 4, 5]),
+        allowedDays: typeof allowedDays === 'string' ? allowedDays : JSON.stringify(allowedDays || [0, 1, 2, 3, 4, 5, 6]),
         windowsJson: typeof windowsJson === 'string' ? windowsJson : JSON.stringify(windowsJson || []),
         dailyLimit: Number(dailyLimit) || 0,
         validateWhatsApp: validateWhatsApp !== undefined ? Boolean(validateWhatsApp) : true,

@@ -80,10 +80,10 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
           try {
             const parsedDays = typeof data.campaign.allowedDays === 'string'
               ? JSON.parse(data.campaign.allowedDays)
-              : data.campaign.allowedDays || [1, 2, 3, 4, 5];
+              : data.campaign.allowedDays || [0, 1, 2, 3, 4, 5, 6];
             setEditAllowedDays(parsedDays);
           } catch {
-            setEditAllowedDays([1, 2, 3, 4, 5]);
+            setEditAllowedDays([0, 1, 2, 3, 4, 5, 6]);
           }
         }
       }
@@ -774,9 +774,41 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
 
               {/* Editor de Dias da Semana Permitidos */}
               <div className="space-y-2 pt-2 border-t border-zinc-800">
-                <label className="text-xs font-semibold text-zinc-300 block">
-                  Dias da Semana Permitidos para Disparos
-                </label>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                  <label className="text-xs font-semibold text-zinc-300 block">
+                    Dias da Semana Permitidos (Sábado e Domingo)
+                  </label>
+                  <div className="flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setEditAllowedDays([0, 1, 2, 3, 4, 5, 6])}
+                      className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-emerald-400 font-semibold cursor-pointer"
+                    >
+                      Todos (Seg-Dom)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditAllowedDays([1, 2, 3, 4, 5, 6])}
+                      className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold cursor-pointer"
+                    >
+                      Seg-Sáb
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditAllowedDays([1, 2, 3, 4, 5])}
+                      className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400 font-semibold cursor-pointer"
+                    >
+                      Seg-Sex
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditAllowedDays([0, 6])}
+                      className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-teal-300 font-semibold cursor-pointer"
+                    >
+                      Sáb e Dom
+                    </button>
+                  </div>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {[
                     { id: 1, label: 'Seg' },
@@ -788,6 +820,7 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
                     { id: 0, label: 'Dom' },
                   ].map((d) => {
                     const isSelected = editAllowedDays.includes(d.id);
+                    const isWeekend = d.id === 6 || d.id === 0;
                     return (
                       <button
                         key={d.id}
@@ -802,7 +835,9 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
                         }}
                         className={`w-12 h-9 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
                           isSelected
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm'
+                            ? isWeekend
+                              ? 'bg-teal-500/20 text-teal-300 border-teal-500/50 shadow-sm'
+                              : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm'
                             : 'bg-black/40 text-zinc-500 border-zinc-800 hover:text-white'
                         }`}
                       >

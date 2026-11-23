@@ -28,7 +28,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const timezone = campaign.timezone || 'America/Sao_Paulo';
     const localNow = getLocalTimeComponents(new Date(), timezone);
 
-    let allowedDays: number[] = [1, 2, 3, 4, 5];
+    let allowedDays: number[] = [0, 1, 2, 3, 4, 5, 6];
     try {
       if (campaign.allowedDays) {
         allowedDays = JSON.parse(campaign.allowedDays);

@@ -74,7 +74,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
     keepTitles: false,
 
     timezone: 'America/Sao_Paulo',
-    allowedDays: [1, 2, 3, 4, 5], // Seg a Sex
+    allowedDays: [0, 1, 2, 3, 4, 5, 6], // Seg a Dom (todos os dias, incluindo finais de semana)
     windows: [
       { start: '07:30', end: '09:00', limit: 12 },
       { start: '17:30', end: '19:30', limit: 12 },

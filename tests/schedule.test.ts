@@ -127,4 +127,42 @@ describe('Schedule & Cadence Evaluator', () => {
     // Deve agendar para 17:30 de hoje (20:30 UTC)
     assert.strictEqual(res.nextDispatchAt?.toISOString(), '2026-11-23T20:30:00.000Z');
   });
+
+  it('permite disparo no sábado quando configurado com finais de semana liberados', () => {
+    // 2026-11-28 (Sábado), 08:30 em SP = 11:30 UTC
+    const saturday = new Date('2026-11-28T11:30:00Z');
+
+    const res = evaluateSchedule(
+      {
+        timezone: 'America/Sao_Paulo',
+        allowedDays: [0, 1, 2, 3, 4, 5, 6], // Todos os dias incluindo Sábado e Domingo
+        windows: [{ start: '08:00', end: '12:00', limit: 20 }],
+      },
+      {},
+      saturday
+    );
+
+    assert.strictEqual(res.canDispatch, true);
+    assert.strictEqual(res.isOutsideAllowedDays, false);
+    assert.strictEqual(res.activeWindowIndex, 0);
+  });
+
+  it('permite disparo no domingo por padrão quando allowedDays não é especificado', () => {
+    // 2026-11-22 (Domingo), 09:00 em SP = 12:00 UTC
+    const sunday = new Date('2026-11-22T12:00:00Z');
+
+    const res = evaluateSchedule(
+      {
+        timezone: 'America/Sao_Paulo',
+        // Sem allowedDays especificado -> deve permitir todos os dias [0..6] por padrão
+        windows: [{ start: '08:00', end: '12:00', limit: 20 }],
+      },
+      {},
+      sunday
+    );
+
+    assert.strictEqual(res.canDispatch, true);
+    assert.strictEqual(res.isOutsideAllowedDays, false);
+    assert.strictEqual(res.activeWindowIndex, 0);
+  });
 });

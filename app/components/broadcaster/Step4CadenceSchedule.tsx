@@ -233,35 +233,90 @@ export default function Step4CadenceSchedule({
         </div>
 
         {/* Dias da Semana Permitidos */}
-        <div className="space-y-2">
-          <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-            Dias da Semana Autorizados
-          </label>
+        <div className="space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+              Dias da Semana Autorizados (Sábado e Domingo Permitidos)
+            </label>
+            {/* Atalhos rápidos de seleção de dias */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => updateFormData({ allowedDays: [0, 1, 2, 3, 4, 5, 6] })}
+                className="text-[11px] px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-emerald-400 font-semibold border border-zinc-700/80 transition-colors cursor-pointer"
+              >
+                Todos (Seg a Dom)
+              </button>
+              <button
+                type="button"
+                onClick={() => updateFormData({ allowedDays: [1, 2, 3, 4, 5, 6] })}
+                className="text-[11px] px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold border border-zinc-700/80 transition-colors cursor-pointer"
+              >
+                Seg a Sáb
+              </button>
+              <button
+                type="button"
+                onClick={() => updateFormData({ allowedDays: [1, 2, 3, 4, 5] })}
+                className="text-[11px] px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 font-semibold border border-zinc-700/80 transition-colors cursor-pointer"
+              >
+                Seg a Sex
+              </button>
+              <button
+                type="button"
+                onClick={() => updateFormData({ allowedDays: [0, 6] })}
+                className="text-[11px] px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-teal-300 font-semibold border border-zinc-700/80 transition-colors cursor-pointer"
+              >
+                Sáb e Dom
+              </button>
+            </div>
+          </div>
+
           <div className="flex flex-wrap gap-2">
             {DAYS_OF_WEEK.map((d) => {
               const isSelected = formData.allowedDays.includes(d.id);
+              const isWeekend = d.id === 6 || d.id === 0;
               return (
                 <button
                   key={d.id}
                   type="button"
                   onClick={() => toggleDay(d.id)}
-                  className={`w-12 h-10 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                  className={`w-14 h-11 rounded-xl text-xs font-bold transition-all border flex flex-col items-center justify-center cursor-pointer ${
                     isSelected
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm'
+                      ? isWeekend
+                        ? 'bg-teal-500/20 text-teal-300 border-teal-500/50 shadow-sm'
+                        : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm'
                       : 'bg-black/40 text-zinc-500 border-zinc-800 hover:text-white'
                   }`}
                 >
-                  {d.label}
+                  <span>{d.label}</span>
+                  {isWeekend && (
+                    <span className="text-[9px] font-normal opacity-75 leading-tight">fim sem.</span>
+                  )}
                 </button>
               );
             })}
           </div>
-          {!formData.allowedDays.includes(new Date().getDay()) && (
+          {!formData.allowedDays.includes(new Date().getDay()) ? (
             <p className="text-[11px] text-amber-400/90 flex items-center gap-1.5 mt-1 bg-amber-500/10 p-2 rounded-xl border border-amber-500/20">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
               <span>
-                Hoje ({['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'][new Date().getDay()]}) não está selecionado. Se deseja que os disparos comecem hoje, marque o botão acima.
+                Hoje ({['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'][new Date().getDay()]}) não está selecionado. Se deseja que os disparos aconteçam hoje, clique em "Todos (Seg a Dom)" ou marque o botão acima.
+              </span>
+            </p>
+          ) : (
+            <p className="text-[11px] text-zinc-400 flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>
+                Envios habilitados nos dias:{' '}
+                <strong className="text-zinc-200">
+                  {formData.allowedDays.length === 7
+                    ? 'Todos os dias da semana (incluindo Sábado e Domingo)'
+                    : formData.allowedDays
+                        .map((id) => DAYS_OF_WEEK.find((d) => d.id === id)?.label)
+                        .filter(Boolean)
+                        .join(', ')}
+                </strong>
               </span>
             </p>
           )}
