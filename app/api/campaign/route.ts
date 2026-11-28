@@ -110,25 +110,33 @@ export async function POST(req: Request) {
       metaTemplateComponents,
     } = body;
 
-    if (!instanceName || !contacts || contacts.length === 0) {
+    if (!instanceName || !contacts || !Array.isArray(contacts) || contacts.length === 0) {
       return NextResponse.json({ error: 'Dados inválidos ou lista de contatos vazia' }, { status: 400 });
     }
 
-    let scheduleDate = null;
+    let scheduleDate: Date | null = null;
     if (scheduledAt) {
-      scheduleDate = new Date(scheduledAt);
-      if (scheduleDate.getTime() < Date.now()) {
-        scheduleDate = null; // Se for no passado, inicia imediatamente
+      const parsed = new Date(scheduledAt);
+      if (!isNaN(parsed.getTime()) && parsed.getTime() > Date.now()) {
+        scheduleDate = parsed;
       }
     }
 
     const initialStatus = scheduleDate ? 'scheduled' : 'running';
     const nextDispatchAt = scheduleDate || new Date();
 
+    const parsedAllowedDays = typeof allowedDays === 'string'
+      ? allowedDays
+      : JSON.stringify(Array.isArray(allowedDays) && allowedDays.length > 0 ? allowedDays : [0, 1, 2, 3, 4, 5, 6]);
+
+    const parsedWindows = typeof windowsJson === 'string'
+      ? windowsJson
+      : JSON.stringify(Array.isArray(windowsJson) ? windowsJson : []);
+
     // 1. Cria a campanha com todos os parâmetros persistidos no PostgreSQL
     const campaign = await prisma.campaign.create({
       data: {
-        name: name || 'Nova Campanha',
+        name: (name && typeof name === 'string' && name.trim()) ? name.trim() : 'Nova Campanha',
         clientId: clientId || null,
         instanceName,
         messageMode: messageMode || 'text',
@@ -142,8 +150,8 @@ export async function POST(req: Request) {
         batchSize: Number(batchSize) || 40,
         batchPause: Number(batchPause) || 10,
         timezone: timezone || 'America/Sao_Paulo',
-        allowedDays: typeof allowedDays === 'string' ? allowedDays : JSON.stringify(allowedDays || [0, 1, 2, 3, 4, 5, 6]),
-        windowsJson: typeof windowsJson === 'string' ? windowsJson : JSON.stringify(windowsJson || []),
+        allowedDays: parsedAllowedDays,
+        windowsJson: parsedWindows,
         dailyLimit: Number(dailyLimit) || 0,
         validateWhatsApp: validateWhatsApp !== undefined ? Boolean(validateWhatsApp) : true,
         stopGroupOnSuccess: stopGroupOnSuccess !== undefined ? Boolean(stopGroupOnSuccess) : true,

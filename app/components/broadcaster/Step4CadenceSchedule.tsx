@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Clock, Calendar, ShieldCheck, CheckCircle2, AlertTriangle, 
   Plus, Trash2, ArrowLeft, Play, Sparkles, Sliders, Smartphone, Check,
@@ -35,19 +35,26 @@ export default function Step4CadenceSchedule({
   loading,
   showToast,
 }: Props) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const isMeta = formData.provider === 'meta_official';
+  const allowedDays = Array.isArray(formData.allowedDays) ? formData.allowedDays : [0, 1, 2, 3, 4, 5, 6];
+  const windows = Array.isArray(formData.windows) ? formData.windows : [];
 
   // Alternar dia da semana
   const toggleDay = (dayId: number) => {
-    const exists = formData.allowedDays.includes(dayId);
+    const exists = allowedDays.includes(dayId);
     if (exists) {
-      if (formData.allowedDays.length === 1) {
+      if (allowedDays.length === 1) {
         showToast('Pelo menos um dia da semana deve ser selecionado.', 'warning');
         return;
       }
-      updateFormData({ allowedDays: formData.allowedDays.filter((d) => d !== dayId) });
+      updateFormData({ allowedDays: allowedDays.filter((d) => d !== dayId) });
     } else {
-      updateFormData({ allowedDays: [...formData.allowedDays, dayId].sort() });
+      updateFormData({ allowedDays: [...allowedDays, dayId].sort((a, b) => a - b) });
     }
   };
 
@@ -58,22 +65,22 @@ export default function Step4CadenceSchedule({
       end: '10:00',
       limit: 15,
     };
-    updateFormData({ windows: [...formData.windows, newWindow] });
+    updateFormData({ windows: [...windows, newWindow] });
   };
 
   // Remover Janela
   const removeWindow = (index: number) => {
-    if (formData.windows.length === 1) {
+    if (windows.length <= 1) {
       showToast('A campanha precisa de pelo menos uma janela de horário.', 'warning');
       return;
     }
-    const updated = formData.windows.filter((_, i) => i !== index);
+    const updated = windows.filter((_, i) => i !== index);
     updateFormData({ windows: updated });
   };
 
   // Atualizar Janela
   const updateWindow = (index: number, updates: Partial<TimeWindow>) => {
-    const updated = formData.windows.map((w, i) => (i === index ? { ...w, ...updates } : w));
+    const updated = windows.map((w, i) => (i === index ? { ...w, ...updates } : w));
     updateFormData({ windows: updated });
   };
 
@@ -274,7 +281,7 @@ export default function Step4CadenceSchedule({
 
           <div className="flex flex-wrap gap-2">
             {DAYS_OF_WEEK.map((d) => {
-              const isSelected = formData.allowedDays.includes(d.id);
+              const isSelected = allowedDays.includes(d.id);
               const isWeekend = d.id === 6 || d.id === 0;
               return (
                 <button
@@ -297,7 +304,7 @@ export default function Step4CadenceSchedule({
               );
             })}
           </div>
-          {!formData.allowedDays.includes(new Date().getDay()) ? (
+          {mounted && !allowedDays.includes(new Date().getDay()) ? (
             <p className="text-[11px] text-amber-400/90 flex items-center gap-1.5 mt-1 bg-amber-500/10 p-2 rounded-xl border border-amber-500/20">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
               <span>
@@ -310,9 +317,9 @@ export default function Step4CadenceSchedule({
               <span>
                 Envios habilitados nos dias:{' '}
                 <strong className="text-zinc-200">
-                  {formData.allowedDays.length === 7
+                  {allowedDays.length === 7
                     ? 'Todos os dias da semana (incluindo Sábado e Domingo)'
-                    : formData.allowedDays
+                    : allowedDays
                         .map((id) => DAYS_OF_WEEK.find((d) => d.id === id)?.label)
                         .filter(Boolean)
                         .join(', ')}
@@ -338,7 +345,7 @@ export default function Step4CadenceSchedule({
           </div>
 
           <div className="space-y-2">
-            {formData.windows.map((win, idx) => (
+            {windows.map((win, idx) => (
               <div
                 key={idx}
                 className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-3.5 rounded-2xl bg-black/50 border border-zinc-800/80"

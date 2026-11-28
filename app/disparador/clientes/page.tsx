@@ -836,7 +836,7 @@ export default function ClientsPage() {
                       <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin" />
                       <span className="text-xs font-semibold text-zinc-600">Gerando QR Code...</span>
                     </div>
-                  ) : qrCode ? (
+                  ) : typeof qrCode === 'string' && qrCode ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
                       src={qrCode.startsWith('data:') ? qrCode : `data:image/png;base64,${qrCode}`}

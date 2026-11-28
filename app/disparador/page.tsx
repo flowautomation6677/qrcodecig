@@ -42,6 +42,38 @@ interface ClientOption {
   status: string;
 }
 
+function safeFormatDate(value?: string | null): string {
+  if (!value) return '-';
+  try {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('pt-BR');
+  } catch {
+    return '-';
+  }
+}
+
+function safeFormatDateTime(value?: string | null): string {
+  if (!value) return '-';
+  try {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? '-' : d.toLocaleString('pt-BR');
+  } catch {
+    return '-';
+  }
+}
+
+function safeFormatResumeDate(value?: string | null): string {
+  if (!value) return '';
+  try {
+    const d = new Date(value);
+    return isNaN(d.getTime())
+      ? ''
+      : d.toLocaleDateString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -380,9 +412,9 @@ export default function DashboardPage() {
                               {camp.pauseReason}
                             </p>
                           )}
-                          {camp.nextDispatchAt && (
+                          {camp.nextDispatchAt && safeFormatResumeDate(camp.nextDispatchAt) && (
                             <p className="text-[10px] text-cyan-400/80 font-mono mt-0.5">
-                              Retoma: {new Date(camp.nextDispatchAt).toLocaleDateString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}
+                              Retoma: {safeFormatResumeDate(camp.nextDispatchAt)}
                             </p>
                           )}
                         </div>
@@ -404,13 +436,13 @@ export default function DashboardPage() {
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      <span className="font-mono text-zinc-300">{camp._count.contacts}</span>
+                      <span className="font-mono text-zinc-300">{camp._count?.contacts ?? 0}</span>
                     </td>
                     <td className="px-6 py-4 text-zinc-300">
-                      {camp.scheduledAt ? new Date(camp.scheduledAt).toLocaleString('pt-BR') : 'Imediato'}
+                      {camp.scheduledAt ? safeFormatDateTime(camp.scheduledAt) : 'Imediato'}
                     </td>
                     <td className="px-6 py-4 text-right text-zinc-500">
-                      {new Date(camp.createdAt).toLocaleDateString('pt-BR')}
+                      {safeFormatDate(camp.createdAt)}
                     </td>
                   </tr>
                 ))}

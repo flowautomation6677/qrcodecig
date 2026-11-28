@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { 
   ArrowLeft, CheckCircle2, Clock, PlayCircle, XCircle, 
   Save, AlertTriangle, Users, Calendar, Settings, Trash2, 
@@ -16,8 +16,20 @@ interface TimeWindow {
   limit: number;
 }
 
-export default function CampanhaDetailsPage({ params }: { params: { id: string } }) {
+function safeFormatDateTime(value?: string | null): string {
+  if (!value) return '-';
+  try {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? '-' : d.toLocaleString('pt-BR');
+  } catch {
+    return '-';
+  }
+}
+
+export default function CampanhaDetailsPage({ params }: { params?: { id?: string } }) {
   const router = useRouter();
+  const routeParams = useParams();
+  const campaignId = (params?.id || routeParams?.id) as string;
   const [campaign, setCampaign] = useState<any>(null);
   const [contacts, setContacts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,9 +61,10 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
   };
 
   const fetchCampaign = async (showLoading = true) => {
+    if (!campaignId) return;
     if (showLoading) setLoading(true);
     try {
-      const res = await fetch(`/api/campaign/${params.id}`);
+      const res = await fetch(`/api/campaign/${campaignId}`);
       const data = await res.json();
       if (data.campaign) {
         setCampaign(data.campaign);
@@ -72,7 +85,7 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
             const parsedWins = typeof data.campaign.windowsJson === 'string'
               ? JSON.parse(data.campaign.windowsJson)
               : data.campaign.windowsJson || [];
-            setEditWindows(parsedWins);
+            setEditWindows(Array.isArray(parsedWins) ? parsedWins : []);
           } catch {
             setEditWindows([]);
           }
@@ -81,7 +94,7 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
             const parsedDays = typeof data.campaign.allowedDays === 'string'
               ? JSON.parse(data.campaign.allowedDays)
               : data.campaign.allowedDays || [0, 1, 2, 3, 4, 5, 6];
-            setEditAllowedDays(parsedDays);
+            setEditAllowedDays(Array.isArray(parsedDays) ? parsedDays : [0, 1, 2, 3, 4, 5, 6]);
           } catch {
             setEditAllowedDays([0, 1, 2, 3, 4, 5, 6]);
           }
@@ -96,21 +109,27 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
   };
 
   useEffect(() => {
+    if (!campaignId) return;
     fetchCampaign(true);
+  }, [campaignId]);
+
+  useEffect(() => {
+    if (!campaignId) return;
+    if (!campaign || (campaign.status !== 'running' && campaign.status !== 'waiting_next_window')) {
+      return;
+    }
     const interval = setInterval(() => {
-      // Polling ativo quando estiver rodando ou esperando janela
-      if (campaign && (campaign.status === 'running' || campaign.status === 'waiting_next_window')) {
-        fetchCampaign(false);
-      }
+      fetchCampaign(false);
     }, 6000);
     return () => clearInterval(interval);
-  }, [params.id, campaign?.status]);
+  }, [campaignId, campaign?.status]);
 
   // Salvar Edição Rápida via PATCH
   const handleSavePatch = async () => {
+    if (!campaignId) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/campaign/${params.id}`, {
+      const res = await fetch(`/api/campaign/${campaignId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -143,8 +162,9 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
   };
 
   const handlePause = async () => {
+    if (!campaignId) return;
     try {
-      const res = await fetch(`/api/campaign/${params.id}/pause`, { method: 'POST' });
+      const res = await fetch(`/api/campaign/${campaignId}/pause`, { method: 'POST' });
       if (res.ok) {
         showToast('Campanha pausada com sucesso!', 'success');
         fetchCampaign(false);
@@ -155,8 +175,9 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
   };
 
   const handleResume = async () => {
+    if (!campaignId) return;
     try {
-      const res = await fetch(`/api/campaign/${params.id}/resume`, { method: 'POST' });
+      const res = await fetch(`/api/campaign/${campaignId}/resume`, { method: 'POST' });
       if (res.ok) {
         showToast('Campanha retomada!', 'success');
         fetchCampaign(false);
@@ -167,10 +188,11 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
   };
 
   const handleDispatchNow = async () => {
+    if (!campaignId) return;
     if (!confirm('Deseja forçar o próximo disparo desta campanha agora?')) return;
     setDispatching(true);
     try {
-      const res = await fetch(`/api/campaign/${params.id}/dispatch-now`, { method: 'POST' });
+      const res = await fetch(`/api/campaign/${campaignId}/dispatch-now`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         showToast('Disparo iniciado!', 'success');
@@ -186,9 +208,10 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
   };
 
   const handleDelete = async () => {
+    if (!campaignId) return;
     if (!confirm('Tem certeza que deseja excluir esta campanha e todos os seus registros?')) return;
     try {
-      const res = await fetch(`/api/campaign/${params.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/campaign/${campaignId}`, { method: 'DELETE' });
       if (res.ok) {
         showToast('Campanha excluída!', 'success');
         router.push('/disparador');
@@ -349,7 +372,7 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Exportar CSV */}
             <a
-              href={`/api/campaign/${params.id}/export`}
+              href={`/api/campaign/${campaignId}/export`}
               download
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs transition-all cursor-pointer shadow"
             >
@@ -442,9 +465,9 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
                 <p className="text-zinc-300 mt-1">
                   <strong>Status do Agendador:</strong> {campaign.pauseReason || 'Aguardando próxima janela permitida de horário ou dia da semana'}.
                 </p>
-                {campaign.nextDispatchAt && (
+                {campaign.nextDispatchAt && safeFormatDateTime(campaign.nextDispatchAt) !== '-' && (
                   <p className="text-cyan-400 font-mono text-[11px] mt-1">
-                    Próxima abertura automática: {new Date(campaign.nextDispatchAt).toLocaleString('pt-BR')}
+                    Próxima abertura automática: {safeFormatDateTime(campaign.nextDispatchAt)}
                   </p>
                 )}
               </div>
@@ -529,7 +552,7 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
                 <span className="text-zinc-400">Próximo Disparo:</span>
                 <span className="font-mono text-emerald-400 font-bold">
                   {campaign.nextDispatchAt
-                    ? new Date(campaign.nextDispatchAt).toLocaleString('pt-BR')
+                    ? safeFormatDateTime(campaign.nextDispatchAt)
                     : 'Imediato'}
                 </span>
               </div>
@@ -699,7 +722,7 @@ export default function CampanhaDetailsPage({ params }: { params: { id: string }
                       {c.error || '-'}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-zinc-400 text-[11px]">
-                      {c.sentAt ? new Date(c.sentAt).toLocaleString('pt-BR') : '-'}
+                      {c.sentAt ? safeFormatDateTime(c.sentAt) : '-'}
                     </td>
                   </tr>
                 ))}

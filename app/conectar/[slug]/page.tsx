@@ -258,7 +258,7 @@ export default function ClientConnectPage() {
                       Tentar Novamente
                     </button>
                   </div>
-                ) : qrCode ? (
+                ) : typeof qrCode === 'string' && qrCode ? (
                   <img
                     src={qrCode.startsWith('data:image') ? qrCode : `data:image/png;base64,${qrCode}`}
                     alt="QR Code WhatsApp"
