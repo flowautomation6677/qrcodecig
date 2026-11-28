@@ -86,7 +86,7 @@ export default function Step3MessagePreview({ formData, updateFormData, onNext, 
 
   // Amostra dos primeiros 3 contatos válidos para preview real
   const top3Contacts = useMemo(() => {
-    return formData.sanitizedContacts.slice(0, 3);
+    return (formData.sanitizedContacts || []).slice(0, 3);
   }, [formData.sanitizedContacts]);
 
   // Data simulada para o cálculo de saudação

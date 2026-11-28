@@ -68,11 +68,12 @@ export default function Step2FilterDedup({ formData, updateFormData, onNext, onB
 
       updateFormData({
         summary: data.summary,
-        sanitizedContacts: data.preview || [],
+        sanitizedContacts: (data.contacts && Array.isArray(data.contacts) && data.contacts.length > 0) ? data.contacts : (data.preview || []),
       });
 
+      const validCount = Number(data.summary?.validPhones ?? data.summary?.validNumbers ?? 0);
       showToast(
-        `Higienização concluída: ${data.summary.validPhones.toLocaleString('pt-BR')} contatos válidos prontos!`,
+        `Higienização concluída: ${validCount.toLocaleString('pt-BR')} contatos válidos prontos!`,
         'success'
       );
     } catch (err: any) {
@@ -91,7 +92,7 @@ export default function Step2FilterDedup({ formData, updateFormData, onNext, onB
   }, []);
 
   const handleProceed = () => {
-    if (!formData.summary || formData.sanitizedContacts.length === 0) {
+    if (!formData.summary || (formData.sanitizedContacts?.length ?? 0) === 0) {
       showToast('Nenhum contato válido encontrado para disparo. Ajuste o filtro de DDD ou deduplicação.', 'warning');
       return;
     }
@@ -100,13 +101,14 @@ export default function Step2FilterDedup({ formData, updateFormData, onNext, onB
 
   // Filtro de busca na tabela de preview
   const filteredPreview = useMemo(() => {
-    if (!tableSearch) return formData.sanitizedContacts.slice(0, 15);
+    const contactsList = formData.sanitizedContacts || [];
+    if (!tableSearch) return contactsList.slice(0, 15);
     const search = tableSearch.toLowerCase();
-    return formData.sanitizedContacts.filter(
+    return contactsList.filter(
       (c) =>
         (c.name && c.name.toLowerCase().includes(search)) ||
-        c.normalizedPhone.includes(search) ||
-        c.rawPhone.includes(search) ||
+        (c.normalizedPhone && c.normalizedPhone.includes(search)) ||
+        (c.rawPhone && c.rawPhone.includes(search)) ||
         (c.contactGroupKey && c.contactGroupKey.toLowerCase().includes(search))
     ).slice(0, 30);
   }, [formData.sanitizedContacts, tableSearch]);
@@ -232,14 +234,14 @@ export default function Step2FilterDedup({ formData, updateFormData, onNext, onB
             <div className="bg-zinc-900/60 p-4 rounded-2xl border border-zinc-800">
               <span className="text-[10px] uppercase font-bold text-zinc-500 block">Total Linhas</span>
               <p className="text-2xl font-light text-white mt-1">
-                {formData.summary.totalRows.toLocaleString('pt-BR')}
+                {Number(formData.summary?.totalRows ?? 0).toLocaleString('pt-BR')}
               </p>
             </div>
 
             <div className="bg-zinc-900/60 p-4 rounded-2xl border border-zinc-800">
               <span className="text-[10px] uppercase font-bold text-zinc-500 block">Números Lidos</span>
               <p className="text-2xl font-light text-indigo-400 mt-1">
-                {formData.summary.phonesFound.toLocaleString('pt-BR')}
+                {Number(formData.summary?.phonesFound ?? formData.summary?.totalNumbers ?? 0).toLocaleString('pt-BR')}
               </p>
             </div>
 
@@ -248,7 +250,7 @@ export default function Step2FilterDedup({ formData, updateFormData, onNext, onB
                 <CheckCircle2 className="w-3 h-3" /> Válidos p/ Disparo
               </span>
               <p className="text-2xl font-bold text-emerald-400 mt-1">
-                {formData.summary.validPhones.toLocaleString('pt-BR')}
+                {Number(formData.summary?.validPhones ?? formData.summary?.validNumbers ?? 0).toLocaleString('pt-BR')}
               </p>
             </div>
 
@@ -257,7 +259,7 @@ export default function Step2FilterDedup({ formData, updateFormData, onNext, onB
                 <AlertTriangle className="w-3 h-3" /> Descartados (DDD/Inv)
               </span>
               <p className="text-2xl font-bold text-amber-400 mt-1">
-                {(formData.summary.discardedDdd + formData.summary.discardedInvalid).toLocaleString('pt-BR')}
+                {Number((formData.summary?.discardedDdd ?? 0) + (formData.summary?.discardedInvalid ?? 0)).toLocaleString('pt-BR')}
               </p>
             </div>
 
@@ -266,7 +268,7 @@ export default function Step2FilterDedup({ formData, updateFormData, onNext, onB
                 <ShieldCheck className="w-3 h-3" /> Já Disparados
               </span>
               <p className="text-2xl font-bold text-purple-400 mt-1">
-                {formData.summary.ignoredDuplicates.toLocaleString('pt-BR')}
+                {Number(formData.summary?.ignoredDuplicates ?? formData.summary?.discardedDuplicate ?? 0).toLocaleString('pt-BR')}
               </p>
             </div>
           </div>
@@ -274,12 +276,12 @@ export default function Step2FilterDedup({ formData, updateFormData, onNext, onB
       )}
 
       {/* Lista de Contatos Higienizados com Busca */}
-      {formData.sanitizedContacts.length > 0 && (
+      {(formData.sanitizedContacts?.length ?? 0) > 0 && (
         <div className="bg-zinc-900/40 p-5 rounded-3xl border border-zinc-800/60 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <span className="text-xs font-bold text-zinc-300 flex items-center gap-2">
               <Users className="w-3.5 h-3.5 text-emerald-400" />
-              Destinatários Válidos ({formData.sanitizedContacts.length.toLocaleString('pt-BR')} prontos)
+              Destinatários Válidos ({Number(formData.sanitizedContacts?.length ?? 0).toLocaleString('pt-BR')} prontos)
             </span>
 
             <div className="relative">
@@ -347,7 +349,7 @@ export default function Step2FilterDedup({ formData, updateFormData, onNext, onB
         <button
           type="button"
           onClick={handleProceed}
-          disabled={!formData.summary || formData.sanitizedContacts.length === 0}
+          disabled={!formData.summary || (formData.sanitizedContacts?.length ?? 0) === 0}
           className="flex items-center gap-2 px-8 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20 cursor-pointer"
         >
           Avançar para Copy, Mídia & Preview Real

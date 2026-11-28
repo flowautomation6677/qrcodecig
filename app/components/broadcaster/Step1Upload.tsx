@@ -63,7 +63,7 @@ export default function Step1Upload({ formData, updateFormData, onNext, showToas
       }
 
       detectAndSetColumns(fileName, file, headers, rows);
-      showToast(`Planilha carregada: ${rows.length.toLocaleString('pt-BR')} linhas detectadas!`, 'success');
+      showToast(`Planilha carregada: ${(rows?.length ?? 0).toLocaleString('pt-BR')} linhas detectadas!`, 'success');
     } catch (err: any) {
       console.error('Erro ao ler planilha:', err);
       showToast('Falha ao processar o arquivo: ' + (err.message || 'Erro desconhecido'), 'error');
@@ -312,10 +312,10 @@ export default function Step1Upload({ formData, updateFormData, onNext, showToas
               </p>
             </div>
 
-            {formData.totalRawRows > 0 && (
+            {(formData.totalRawRows ?? 0) > 0 && (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
                 <Check className="w-3.5 h-3.5" />
-                {formData.totalRawRows.toLocaleString('pt-BR')} linhas carregadas
+                {Number(formData.totalRawRows ?? 0).toLocaleString('pt-BR')} linhas carregadas
               </div>
             )}
           </div>

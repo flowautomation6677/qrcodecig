@@ -21,6 +21,9 @@ export interface ParseSummary {
   discardedDdd: number;
   discardedInvalid: number;
   ignoredDuplicates: number;
+  totalNumbers?: number;
+  validNumbers?: number;
+  discardedDuplicate?: number;
 }
 
 export interface ClientItem {

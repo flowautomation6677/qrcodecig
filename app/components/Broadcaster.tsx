@@ -155,7 +155,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
       return;
     }
 
-    if (formData.sanitizedContacts.length === 0) {
+    if ((formData.sanitizedContacts?.length ?? 0) === 0) {
       showToast('Nenhum contato válido para disparo.', 'warning');
       return;
     }
@@ -189,7 +189,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
         metaTemplateLanguage: formData.provider === 'meta_official' ? formData.metaTemplateLanguage : undefined,
         metaTemplateComponents: formData.provider === 'meta_official' ? formData.metaTemplateComponents : undefined,
         scheduledAt: formData.isScheduled && formData.scheduledAt ? new Date(formData.scheduledAt).toISOString() : undefined,
-        contacts: formData.sanitizedContacts.map((c) => ({
+        contacts: (formData.sanitizedContacts || []).map((c) => ({
           number: c.normalizedPhone,
           normalizedPhone: c.normalizedPhone,
           name: c.name,
@@ -308,7 +308,7 @@ export default function Broadcaster({ instanceName }: Readonly<{ instanceName: s
                   type="button"
                   onClick={() => {
                     // Só permite pular se já tiver planilha ou estiver voltando
-                    if (isPast || (step.id === 2 && formData.totalRawRows > 0) || (step.id === 3 && formData.sanitizedContacts.length > 0)) {
+                    if (isPast || (step.id === 2 && (formData.totalRawRows ?? 0) > 0) || (step.id === 3 && (formData.sanitizedContacts?.length ?? 0) > 0)) {
                       setCurrentStep(step.id);
                     }
                   }}

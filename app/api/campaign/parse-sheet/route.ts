@@ -203,10 +203,13 @@ export async function POST(req: Request) {
       summary: {
         totalRows: rows.length,
         totalNumbers: totalNumbersFound,
+        phonesFound: totalNumbersFound,
         validNumbers: validContacts.length,
+        validPhones: validContacts.length,
         discardedInvalid,
         discardedDdd,
         discardedDuplicate,
+        ignoredDuplicates: discardedDuplicate,
       },
       preview,
       contacts: validContacts,

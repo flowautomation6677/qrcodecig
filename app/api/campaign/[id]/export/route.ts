@@ -50,7 +50,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       const cleanName = (c.name || '').replace(/;/g, ' ').replace(/"/g, '""');
       const cleanError = (c.error || '').replace(/;/g, ' ').replace(/"/g, '""').replace(/\n/g, ' ');
       const statusLabel = statusTranslations[c.status] || c.status;
-      const sentDate = c.sentAt ? new Date(c.sentAt).toLocaleString('pt-BR') : '';
+      const sentDate = c.sentAt && !isNaN(new Date(c.sentAt).getTime())
+        ? new Date(c.sentAt).toLocaleString('pt-BR')
+        : '';
 
       return `"${cleanName}";"${c.number}";"${c.normalizedPhone}";"${statusLabel}";"${cleanError}";"${c.contactGroupKey || ''}";"${sentDate}"`;
     });

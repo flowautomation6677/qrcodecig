@@ -153,9 +153,9 @@ export default function Step4CadenceSchedule({
 
   // Estimativa de dias para concluir a base inteira
   const simulation = useMemo(() => {
-    const total = formData.sanitizedContacts.length;
+    const total = formData.sanitizedContacts?.length || 0;
     const daily = formData.dailyLimit > 0 ? formData.dailyLimit : 30;
-    const daysAllowedPerWeek = Math.max(formData.allowedDays.length, 1);
+    const daysAllowedPerWeek = Math.max(allowedDays.length, 1);
     const totalOperationalDays = Math.ceil(total / daily);
     const weeksNeeded = (totalOperationalDays / daysAllowedPerWeek).toFixed(1);
 
@@ -166,7 +166,7 @@ export default function Step4CadenceSchedule({
       totalOperationalDays,
       weeksNeeded,
     };
-  }, [formData.sanitizedContacts.length, formData.dailyLimit, formData.allowedDays]);
+  }, [formData.sanitizedContacts?.length, formData.dailyLimit, allowedDays]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -544,7 +544,7 @@ export default function Step4CadenceSchedule({
               Estimativa de Execução da Campanha
             </h5>
             <p className="text-xs text-zinc-400 mt-0.5">
-              {simulation.total.toLocaleString('pt-BR')} contatos • Limite de {simulation.daily} envios/dia em {simulation.daysAllowedPerWeek} dias/semana.
+              {Number(simulation?.total ?? 0).toLocaleString('pt-BR')} contatos • Limite de {simulation?.daily ?? 0} envios/dia em {simulation?.daysAllowedPerWeek ?? 1} dias/semana.
             </p>
           </div>
         </div>
@@ -552,7 +552,7 @@ export default function Step4CadenceSchedule({
         <div className="text-right">
           <span className="text-xs text-zinc-500 block">Tempo estimado:</span>
           <span className="text-lg font-extrabold text-emerald-400">
-            ~{simulation.totalOperationalDays} dias úteis ({simulation.weeksNeeded} semanas)
+            ~{simulation?.totalOperationalDays ?? 0} dias úteis ({simulation?.weeksNeeded ?? '0'} semanas)
           </span>
         </div>
       </div>
@@ -565,7 +565,7 @@ export default function Step4CadenceSchedule({
             Pronto para Iniciar Campanha Contínua
           </h4>
           <p className="text-xs text-zinc-300 mt-1 max-w-xl">
-            {formData.sanitizedContacts.length.toLocaleString('pt-BR')} destinatários válidos serão processados de forma 100% autocontida{' '}
+            {Number(formData.sanitizedContacts?.length ?? 0).toLocaleString('pt-BR')} destinatários válidos serão processados de forma 100% autocontida{' '}
             {isMeta ? (
               <span>
                 via <strong>API Oficial da Meta (Cloud API)</strong> com o template{' '}
